@@ -51,6 +51,8 @@ class Key:
     
 
 class AES_CMAC:
+    TAG_SIZE = 16
+
     def __init__(self):
         pass
 
@@ -83,6 +85,30 @@ class AES_CMAC:
         tag.update(message)
         tag = tag.finalize()
         return tag
+    
+
+    def validate_signature(signed_message: bytes, private_key: Key) -> bool:
+        """Checks if the AES-CMAC signature TAG is valid.
+
+        Args:
+            signed_message (bytes): the signed message
+            private_key (Key): the private key
+
+        Returns:
+            bool: True if the signature is valid; False otherwise
+        """
+        authentic = False
+        message = signed_message[:-AES_CMAC.TAG_SIZE]
+        signature = signed_message[-AES_CMAC.TAG_SIZE:]
+        check = cmac.CMAC(algorithms.AES(private_key.key_value))
+        try:
+            check.update(message)
+            check.verify(signature)
+            authentic = True
+        except:
+            authentic = False
+        
+        return authentic
 
 
 def main():
