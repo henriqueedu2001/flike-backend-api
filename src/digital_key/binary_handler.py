@@ -60,17 +60,17 @@ class BinaryHandler:
         return encoded_time
     
     
-    def encode_bytes_from_hex_str(input_hex_str: str, length: int = 20, byte_order: Literal['little', 'big'] = 'big') -> bytes:
+    def encode_bytes_from_hex_str(input_hex_str: str, length: int = 32, byte_order: Literal['little', 'big'] = 'big') -> bytes:
         """Encodes the given str, interpreted as a hexadecimal string, as an array of bytes, with
         a fixed length of 20, by default. The not empty space will be filled padding zeros.
 
         Args:
             input_hex_str (str): the input hex string
-            length (int, optional): the array of bytes fixed length. Defaults to 20.
+            length (int, optional): the array of bytes fixed length. Defaults to 32.
             byte_order (Literal['little', 'big'], optional): the endianness of the array of bytes. Defaults to 'big'.
 
         Returns:
-            bytes: _description_
+            bytes: the bytes of your string
         """
         input_hex_str_bytes = bytes.fromhex(input_hex_str)
         padding_size = length - len(input_hex_str_bytes)
@@ -98,6 +98,23 @@ class BinaryHandler:
         """
         hex_str = ''.join(f'{byte:02x} ' for byte in input_bytes)
         return hex_str
+    
+
+    def add_padding(input_bytes: bytes, length: int = 256) -> bytes:
+        """Adds padding to the bytes input.
+
+        Args:
+            input_bytes (bytes): the input bytes
+            length (int, optional): the length of the final binary string. Defaults to 256.
+
+        Returns:
+            bytes: the binary data with the added padding
+        """
+        padding_size = length - len(input_bytes)
+        if padding_size > 0:
+            padding_bytes = padding_size * b'\x00'
+            input_bytes = padding_bytes + input_bytes
+        return input_bytes
     
 
     def print_bytes(input_bytes: bytes):
