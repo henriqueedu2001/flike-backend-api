@@ -1,6 +1,6 @@
 from cryptography.hazmat.primitives import cmac
 from cryptography.hazmat.primitives.ciphers import algorithms
-from binary_handler import BinaryHandler
+from ..binary_handler.binary_handler import BinaryHandler
 import os
 from typing import *
 

@@ -1,6 +1,6 @@
 from datetime import datetime
-from binary_handler import BinaryHandler
-from auth import Key, AES_CMAC
+from .binary_handler.binary_handler import BinaryHandler
+from .auth.auth import Key, AES_CMAC
 from typing import *
 
 class DigitalKey:
