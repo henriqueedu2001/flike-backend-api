@@ -80,7 +80,7 @@ class BinaryHandler:
         return input_hex_str_bytes
     
 
-    def get_hex_str_from_bytes(input_bytes: bytes) -> str:
+    def get_hex_str_from_bytes(input_bytes: bytes, bytes_per_line: int = 16) -> str:
         """From a given array of bytes, generates a hexadecimal str. For example,
         if the input is b'\x9c\xd0\xdf\xbf\xf5Pns\t\xb7%\xe1+8\xe9\x02\x1f\x9b\xc6\x8d', then the
         hex_str will be '9c d0 df bf f5 50 6e 73 09 b7 25 e1 2b 38 e9 02 1f 9b c6 8d'.
@@ -96,7 +96,7 @@ class BinaryHandler:
             >>> print(hex_str)
             '9c d0 df bf f5 50 6e 73 09 b7 25 e1 2b 38 e9 02 1f 9b c6 8d'
         """
-        hex_str = ''.join(f'{byte:02x} ' for byte in input_bytes)
+        hex_str = ''.join(f'{byte:02x}{'\n' if index % bytes_per_line == bytes_per_line - 1 and index < len(input_bytes) - 1 else ' '}' for index, byte in enumerate(input_bytes))
         return hex_str
     
 
