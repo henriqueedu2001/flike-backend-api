@@ -6,7 +6,7 @@ from typing import *
 
 
 class Key:
-    def __init__(self, key_value: Union[str, bytes] = None, key_length: int = 256):
+    def __init__(self, key_value: Union[str, bytes] = None, key_length: int = 32):
         """Initializes a new cryptography key. If the key_value isn't informed by the args, the key will be initialized
         with n=key_length random bytes.
 
