@@ -1,7 +1,8 @@
 from fastapi import FastAPI
-from app.api.routes import health_check, binary_handler
+from app.api.routes import health_check, auth, user
 
 app = FastAPI()
 
 app.include_router(health_check.router)
-app.include_router(binary_handler.router)
+app.include_router(auth.router)
+app.include_router(user.router)
