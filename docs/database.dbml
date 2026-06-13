@@ -35,12 +35,7 @@ Table Room {
   id integer [primary key]
   building_id integer [ref: > Building.id]
   name varchar
-  address_line_1 varchar
-  address_line_2 varchar
-  city varchar
-  state varchar
-  zip_code varchar
-  country varchar
+  number varchar
   created_at timestamp
 }
 
@@ -63,6 +58,6 @@ Table EventLog {
   id integer [primary key]
   digital_lock_id integer [ref: > DigitalLock.id]
   type varchar
-  log varchar
+  log text
   created_at timestamp
 }
