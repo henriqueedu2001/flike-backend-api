@@ -64,7 +64,7 @@ def create_user_table(cursor: MySQLCursor):
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP NOT NULL
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
     """
     create_table('user', query=create_user_table_query, cursor=cursor)
@@ -77,7 +77,7 @@ def create_institution_table(cursor: MySQLCursor):
             id INT AUTO_INCREMENT PRIMARY KEY,
             owner_id INT NOT NULL,
             name VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (owner_id) REFERENCES user(id)
         );
     """
@@ -97,7 +97,7 @@ def create_building_table(cursor: MySQLCursor):
             state VARCHAR(255) NOT NULL,
             zip_code VARCHAR(255) NOT NULL,
             country VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (institution_id) REFERENCES institution(id)
         );
     """
@@ -112,7 +112,7 @@ def create_room_table(cursor: MySQLCursor):
             building_id INT NOT NULL,
             name VARCHAR(255) NOT NULL,
             number VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (building_id) REFERENCES building(id)
         );
     """
@@ -126,7 +126,7 @@ def create_digital_lock_table(cursor: MySQLCursor):
             id INT AUTO_INCREMENT PRIMARY KEY,
             room_id INT NOT NULL,
             secret_key VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (room_id) REFERENCES room(id)
         );
     """
@@ -141,7 +141,7 @@ def create_digital_key_table(cursor: MySQLCursor):
             user_id INT NOT NULL,
             room_id INT NOT NULL,
             secret_key VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES user(id),
             FOREIGN KEY (room_id) REFERENCES room(id)
         );
@@ -157,7 +157,7 @@ def create_event_log_table(cursor: MySQLCursor):
             digital_lock_id INT NOT NULL,
             type VARCHAR(255) NOT NULL,
             log TEXT NOT NULL,
-            created_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (digital_lock_id) REFERENCES digital_lock(id)
         );
     """
