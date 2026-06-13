@@ -1,0 +1,66 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+
+Table User {
+  id integer [primary key]
+  name varchar
+  email varchar
+  created_at timestamp
+}
+
+Table Institution {
+  id integer [primary key]
+  owner_id integer [ref: - User.id]
+  name varchar
+  created_at timestamp
+}
+
+Table Building {
+  id integer [primary key]
+  institution_id integer [ref: > Institution.id]
+  name varchar
+  address_line_1 varchar
+  address_line_2 varchar
+  city varchar
+  state varchar
+  zip_code varchar
+  country varchar
+}
+
+Table Room {
+  id integer [primary key]
+  building_id integer [ref: > Building.id]
+  name varchar
+  address_line_1 varchar
+  address_line_2 varchar
+  city varchar
+  state varchar
+  zip_code varchar
+  country varchar
+}
+
+Table DigitalLock {
+  id integer [primary key]
+  room_id integer [ref: < Room.id]
+  secret_key varchar
+}
+
+Table DigitalKey {
+  id integer [primary key]
+  user_id integer [ref: > User.id]
+  room_id integer [ref: > Room.id]
+  secret_key varchar
+}
+
+Table EventLog {
+  id integer [primary key]
+  digital_lock_id integer [ref: > DigitalLock.id]
+  type varchar
+  log varchar
+}
+
+// Ref user_posts: posts.user_id > users.id // many-to-one
+
+// Ref: User.id < follows.following_user_id
+
+// Ref: User.id < follows.followed_user_id
