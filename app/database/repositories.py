@@ -11,6 +11,9 @@ class UserNotFound(Exception):
 class EmailAlreadyInUse(Exception):
     pass
 
+class CredentialsDontExist(Exception):
+    pass
+
 
 class Repository:
     def __init__(self, db: Database):
@@ -64,63 +67,32 @@ class Repository:
             raise UserNotFound(f'user with id = {user_id} not found in the database')
         return user
     
-    # def create_work(self, title: str, date: datetime, category: str, synopsis: str, edition_number: int, idiom: str, isbn: str, pages_num: int, tags: List[str], filenames: Dict):
-    #     # creating the work entity in the work table
-    #     create_work_query = """
-    #         INSERT INTO work(title, date, category)
-    #         VALUES(%s, %s, %s)
-    #     """
 
-    #     self.db.execute(create_work_query, (title, date, category))
-    #     work_id = self.db.cursor.lastrowid
+    def get_user_from_email(self, email: str):
+        query = 'SELECT * FROM user WHERE email = %s;'
+        self.db.execute(query, (email, ))
+        user = self.db.fetch_one()
 
-    #     # creating the edition in the edition table
-    #     create_edition_query = """
-    #         INSERT INTO edition(work_id, edition_number, idiom, title, date, synopsis,  isbn, pages_num, views, likes, shares)
-    #         VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    #     """
-        
-    #     work_id
-    #     if not edition_number: edition_number = 1
-    #     if not idiom: idiom = 'PT-BR'
-    #     if not isbn: isbn = None
-    #     views, likes, shares = 0, 0, 0
-        
-    #     self.db.execute(create_edition_query, (work_id, edition_number, idiom, title, date, synopsis, isbn, pages_num, views, likes, shares))
-    #     edition_id = self.db.cursor.lastrowid
-
-    #     # creating the tags in the tags table
-    #     create_tags_query = """
-    #         INSERT INTO tags(work_id, tag_name)
-    #         VALUES(%s, %s)
-    #     """
-
-    #     tags = [(work_id, tag) for tag in tags]
-
-    #     self.db.execute_many(create_tags_query, tags)
-
-    #     # saving the file paths in the database
-    #     create_files_query = """
-    #         INSERT INTO files(work_id, edition_id, filepath, category)
-    #         VALUES(%s, %s, %s, %s)
-    #     """
-
-    #     for key, value in filenames.items():
-    #         filepath = value
-    #         file_category = key
-    #         if filepath is not None:
-    #             self.db.execute(create_files_query, (work_id, edition_id, filepath, file_category))
-
-    #     # committing to the database       
-    #     self.db.commit()
-
-    #     return work_id, edition_id
+        if not user:
+            raise UserNotFound(f'user with email = {email} not found in the database')
+        return user
     
 
-    # def get_all_work_cards(self):
-    #     get_all_works_query = """
-    #         SELECT * FROM work
-    #     """
-    #     self.db.execute(get_all_works_query)
-    #     works = self.db.fetch_all()
-    #     return works
+    def authenticate(self, email: str, password: str):
+        # get salt and checks if the email exists
+        hashed_email = secure_hash(email)
+
+        query = 'SELECT * FROM auth WHERE hashed_email = %s'
+        self.db.execute(query, (hashed_email, ))
+        credentials = self.db.fetch_one()
+
+        if not credentials: raise CredentialsDontExist()
+        
+        salt = credentials.get('salt')
+        hashed_password_credentials = credentials.get('hashed_password')
+        hashed_password_informed = secure_hash(salt + password)
+
+        if hashed_password_credentials == hashed_password_informed:
+            return True
+
+        return False
