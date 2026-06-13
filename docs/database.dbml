@@ -1,5 +1,8 @@
-// Use DBML to define your database structure
-// Docs: https://dbml.dbdiagram.io/docs
+Table Auth {
+  hashed_email varchar
+  hashed_password varchar
+  salt varchar
+}
 
 Table User {
   id integer [primary key]
