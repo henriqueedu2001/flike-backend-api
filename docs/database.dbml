@@ -28,6 +28,7 @@ Table Building {
   state varchar
   zip_code varchar
   country varchar
+  created_at timestamp
 }
 
 Table Room {
@@ -40,12 +41,14 @@ Table Room {
   state varchar
   zip_code varchar
   country varchar
+  created_at timestamp
 }
 
 Table DigitalLock {
   id integer [primary key]
   room_id integer [ref: < Room.id]
   secret_key varchar
+  created_at timestamp
 }
 
 Table DigitalKey {
@@ -53,6 +56,7 @@ Table DigitalKey {
   user_id integer [ref: > User.id]
   room_id integer [ref: > Room.id]
   secret_key varchar
+  created_at timestamp
 }
 
 Table EventLog {
@@ -60,10 +64,5 @@ Table EventLog {
   digital_lock_id integer [ref: > DigitalLock.id]
   type varchar
   log varchar
+  created_at timestamp
 }
-
-// Ref user_posts: posts.user_id > users.id // many-to-one
-
-// Ref: User.id < follows.following_user_id
-
-// Ref: User.id < follows.followed_user_id
