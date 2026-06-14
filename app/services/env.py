@@ -10,6 +10,8 @@ class EnvironmentVariables:
         self.DB_PASSWORD = os.getenv('DB_PASSWORD')
         self.DB_DATABASE = os.getenv('DB_DATABASE')
         self.DB_PORT = os.getenv('DB_PORT')
+        
+        self.JWT_SECRET = os.getenv('JWT_SECRET')
         pass
 
 
