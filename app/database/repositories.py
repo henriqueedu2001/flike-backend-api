@@ -131,3 +131,67 @@ class InstitutionRepository:
 
         self.db.commit()
         return institution_id, created_at
+
+
+class BuildingRepository:
+    def __init__(self, db: Database):
+        self.db = db
+    
+
+    def get_all_buildings(self):
+        query = 'SELECT * FROM building;'
+        self.db.execute(query)
+        buildings = self.db.fetch_all()
+        return buildings
+    
+
+    def create_building(
+        self,
+        institution_id: int,
+        name: str,
+        address_line_1: str,
+        address_line_2: str,
+        city: str,
+        state: str,
+        zip_code: str,
+        country: str
+    ) -> Tuple[int, datetime]:
+        query = """
+            INSERT INTO building(
+                institution_id,
+                name,
+                address_line_1,
+                address_line_2,
+                city,
+                state,
+                zip_code,
+                country
+            )
+            VALUES(%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        # creating the institution
+        self.db.execute(
+            query, (
+                institution_id,
+                name,
+                address_line_1,
+                address_line_2,
+                city,
+                state,
+                zip_code,
+                country
+            )
+        )
+
+        # retrieving the building_id
+        building_id = self.db.cursor.lastrowid
+        
+        # recovering the timestamp
+        select_query = 'SELECT created_at FROM building WHERE id = %s'
+        self.db.cursor.execute(select_query, (building_id,))
+        row = self.db.cursor.fetchone()
+
+        created_at = row.get('created_at')
+
+        self.db.commit()
+        return building_id, created_at
