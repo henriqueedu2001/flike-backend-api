@@ -195,3 +195,40 @@ class BuildingRepository:
 
         self.db.commit()
         return building_id, created_at
+
+
+class RoomRepository:
+    def __init__(self, db: Database):
+        self.db = db
+    
+
+    def get_all_rooms(self):
+        query = 'SELECT * FROM room;'
+        self.db.execute(query)
+        rooms = self.db.fetch_all()
+        return rooms
+    
+
+    def create_room(
+        self,
+        building_id: str,
+        name: str,
+        number: str,
+    ) -> Tuple[int, datetime]:
+        query = 'INSERT INTO room(building_id, name, number) VALUES(%s, %s, %s)'
+
+        # creating the room
+        self.db.execute(query, (building_id, name, number))
+
+        # retrieving the building_id
+        room_id = self.db.cursor.lastrowid
+        
+        # recovering the timestamp
+        select_query = 'SELECT created_at FROM room WHERE id = %s'
+        self.db.cursor.execute(select_query, (room_id,))
+        row = self.db.cursor.fetchone()
+
+        created_at = row.get('created_at')
+
+        self.db.commit()
+        return room_id, created_at

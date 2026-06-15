@@ -30,5 +30,5 @@ def create_institution(building_data: CreateBuildingRequest, db: Database = Depe
         )
         
         return CreateBuildingResponse(building_id=building_id, created_at=created_at)
-    except EmailAlreadyInUse as error:
-        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
+    except Exception as error:
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))

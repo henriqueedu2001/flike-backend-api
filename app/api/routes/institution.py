@@ -20,5 +20,5 @@ def create_institution(user_id: int, building_name: str, db: Database = Depends(
     try:
         institution_id, created_at = repo.create_institution(user_id, building_name)
         return CreateInstitutionResponse(institution_id=institution_id, created_at=created_at)
-    except EmailAlreadyInUse as error:
-        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
+    except Exception as error:
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
