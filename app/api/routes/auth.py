@@ -23,7 +23,7 @@ def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(se
 
 @router.post('/auth/user')
 def auth_user(user_credentials: AuthUserRequest, db: Database = Depends(get_database)) -> AuthUserResponse:
-    repo = Repository(db)
+    repo = UserRepository(db)
 
     email = user_credentials.email
     password = user_credentials.password
@@ -31,7 +31,7 @@ def auth_user(user_credentials: AuthUserRequest, db: Database = Depends(get_data
     auth_status = False
 
     try:
-        auth_status = repo.authenticate(email, password)
+        auth_status = repo.authenticate_user(email, password)
     except CredentialsDontExist:
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED)
     

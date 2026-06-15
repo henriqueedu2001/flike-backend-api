@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.post('/user/new')
 def create_user(user_data: CreateUserRequest, db: Database = Depends(get_database)) -> CreateUserResponse:
-    repo = Repository(db)
+    repo = UserRepository(db)
     name = user_data.name
     email = user_data.email
     password = user_data.password
@@ -22,14 +22,14 @@ def create_user(user_data: CreateUserRequest, db: Database = Depends(get_databas
 
 @router.get('/user/all')
 def get_all_users(db: Database = Depends(get_database)):
-    repo = Repository(db)
+    repo = UserRepository(db)
     users = repo.get_all_users()
     return users
 
 
 @router.get('/user')
-def get_all_users(id: int, db: Database = Depends(get_database)):
-    repo = Repository(db)
+def get_user(id: int, db: Database = Depends(get_database)):
+    repo = UserRepository(db)
 
     try:
         user = repo.get_user(id)

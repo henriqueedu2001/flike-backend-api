@@ -15,7 +15,7 @@ class CredentialsDontExist(Exception):
     pass
 
 
-class Repository:
+class UserRepository:
     def __init__(self, db: Database):
         self.db = db 
 
@@ -78,21 +78,56 @@ class Repository:
         return user
     
 
-    def authenticate(self, email: str, password: str):
-        # get salt and checks if the email exists
+    def authenticate_user(self, email: str, password: str):
+        # get the credentials and the salt from the email
         hashed_email = secure_hash(email)
-
         query = 'SELECT * FROM auth WHERE hashed_email = %s'
         self.db.execute(query, (hashed_email, ))
         credentials = self.db.fetch_one()
 
+        # fail: no credentials in the database with that email
         if not credentials: raise CredentialsDontExist()
-        
+
+        # compares the hash(salt + informed password) with hash(salt + password)        
         salt = credentials.get('salt')
         hashed_password_credentials = credentials.get('hashed_password')
         hashed_password_informed = secure_hash(salt + password)
 
-        if hashed_password_credentials == hashed_password_informed:
-            return True
+        # success: the hashes are equal
+        if hashed_password_credentials == hashed_password_informed: return True
 
         return False
+    
+
+class InstitutionRepository:
+    def __init__(self, db: Database):
+        self.db = db 
+
+
+    def get_all_institutions(self):
+        query = 'SELECT * FROM institution;'
+        self.db.execute(query)
+        institutions = self.db.fetch_all()
+        return institutions
+    
+
+    def create_institution(self, user_id: int, institution_name: str) -> Tuple[int, datetime]:
+        query = """
+            INSERT INTO institution(owner_id, name)
+            VALUES(%s, %s)
+        """
+        # creating the institution
+        self.db.execute(query, (user_id, institution_name))
+
+        # retrieving the institution_id
+        institution_id = self.db.cursor.lastrowid
+        
+        # recovering the timestamp
+        select_query = 'SELECT created_at FROM institution WHERE id = %s'
+        self.db.cursor.execute(select_query, (institution_id,))
+        row = self.db.cursor.fetchone()
+
+        created_at = row.get('created_at')
+
+        self.db.commit()
+        return institution_id, created_at
