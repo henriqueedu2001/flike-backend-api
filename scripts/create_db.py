@@ -125,7 +125,7 @@ def create_digital_lock_table(cursor: MySQLCursor):
         CREATE TABLE IF NOT EXISTS digital_lock (
             id INT AUTO_INCREMENT PRIMARY KEY,
             room_id INT NOT NULL,
-            secret_key VARCHAR(255) NOT NULL,
+            secret_key BINARY(32) NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (room_id) REFERENCES room(id)
         );
@@ -140,7 +140,7 @@ def create_digital_key_table(cursor: MySQLCursor):
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             room_id INT NOT NULL,
-            secret_key VARCHAR(255) NOT NULL,
+            secret_key BINARY(32) NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES user(id),
             FOREIGN KEY (room_id) REFERENCES room(id)
