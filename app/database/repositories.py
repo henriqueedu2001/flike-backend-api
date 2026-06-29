@@ -3,6 +3,7 @@ from typing import *
 from app.database.database_manager import Database
 from app.modules.auth.hashes import secure_hash
 from app.modules.auth.salt_gen import generate_salt
+from app.modules.cmac.key import *
 
 class UserNotFound(Exception):
     pass
@@ -226,6 +227,39 @@ class RoomRepository:
         # recovering the timestamp
         select_query = 'SELECT created_at FROM room WHERE id = %s'
         self.db.cursor.execute(select_query, (room_id,))
+        row = self.db.cursor.fetchone()
+
+        created_at = row.get('created_at')
+
+        self.db.commit()
+        return room_id, created_at
+
+
+class DigitalLockRepository:
+    def __init__(self, db: Database):
+        self.db = db
+    
+
+    def get_all_digital_locks(self):
+        query = 'SELECT * FROM digital_lock;'
+        self.db.execute(query)
+        digital_locks = self.db.fetch_all()
+        return digital_locks
+
+
+    def create_digital_lock(self, room_id: int):
+        query = 'INSERT INTO digital_lock(room_id, secret_key) VALUES(%s, %s)'
+        secret_key = Key()
+
+        # creating the room
+        self.db.execute(query, (room_id, secret_key.key_value))
+
+        # retrieving the digital_lock_id
+        digital_lock_id = self.db.cursor.lastrowid
+        
+        # recovering the timestamp
+        select_query = 'SELECT created_at FROM digital_lock WHERE id = %s'
+        self.db.cursor.execute(select_query, (digital_lock_id,))
         row = self.db.cursor.fetchone()
 
         created_at = row.get('created_at')
