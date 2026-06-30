@@ -266,3 +266,48 @@ class DigitalLockRepository:
 
         self.db.commit()
         return room_id, created_at
+    
+
+class DigitalKeyRepository:
+    def __init__(self, db: Database):
+        self.db = db
+    
+
+    def get_all_digital_keys(self):
+        query = 'SELECT * FROM digital_key;'
+        self.db.execute(query)
+        digital_keys = self.db.fetch_all()
+        return digital_keys
+    
+
+    def create_digital_key(self, user_id: int, digital_lock_id: int, expiration: datetime):
+        query = 'SELECT secret_key from digital_lock WHERE id = %s'
+        self.db.execute(query, (digital_lock_id, ))
+        secret_key = self.db.cursor.fetchone().get('secret_key')
+
+        digital_key = DigitalKey(
+            user_id=user_id,
+            digital_lock_id=digital_lock_id,
+            timestamp=datetime.now(),
+            expiration=expiration,
+            private_key=Key(secret_key)
+        )
+
+        payload = digital_key.payload
+        print(f'payload: {payload}\nlen: {len(payload)}')
+
+        query = 'INSERT INTO digital_key(user_id, digital_lock_id, payload) VALUES(%s, %s, %s)'
+        self.db.execute(query, (user_id, digital_lock_id, payload))
+
+        # retrieving the digital_lock_id
+        digital_key_id = self.db.cursor.lastrowid
+        
+        # recovering the timestamp
+        select_query = 'SELECT created_at FROM digital_key WHERE id = %s'
+        self.db.cursor.execute(select_query, (digital_key_id,))
+        row = self.db.cursor.fetchone()
+
+        created_at = row.get('created_at')
+
+        self.db.commit()
+        return digital_key_id, created_at

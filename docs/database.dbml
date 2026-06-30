@@ -42,7 +42,7 @@ Table Room {
 Table DigitalLock {
   id integer [primary key]
   room_id integer [ref: < Room.id]
-  secret_key varchar
+  secret_key binary
   created_at timestamp
 }
 
@@ -51,7 +51,7 @@ Table DigitalKey {
   user_id integer [ref: > User.id]
   digital_lock_id integer [ref: > DigitalLock.id]
   expiration timestamp
-  secret_key varchar
+  payload binary
   created_at timestamp
 }
 

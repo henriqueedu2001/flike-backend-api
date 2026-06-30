@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.routes import health_check, auth, user, institution, building, room, digital_lock
+from app.api.routes import health_check, auth, user, institution, building, room, digital_lock, digital_key
 
 app = FastAPI()
 
@@ -10,3 +10,4 @@ app.include_router(institution.router)
 app.include_router(building.router)
 app.include_router(room.router)
 app.include_router(digital_lock.router)
+app.include_router(digital_key.router)

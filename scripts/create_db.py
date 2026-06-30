@@ -140,7 +140,7 @@ def create_digital_key_table(cursor: MySQLCursor):
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             digital_lock_id INT NOT NULL,
-            secret_key BINARY(32) NOT NULL,
+            payload BINARY(48) NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES user(id),
             FOREIGN KEY (digital_lock_id) REFERENCES digital_lock(id)
