@@ -50,6 +50,7 @@ Table DigitalKey {
   id integer [primary key]
   user_id integer [ref: > User.id]
   digital_lock_id integer [ref: > DigitalLock.id]
+  expiration timestamp
   secret_key varchar
   created_at timestamp
 }
