@@ -139,11 +139,11 @@ def create_digital_key_table(cursor: MySQLCursor):
         CREATE TABLE IF NOT EXISTS digital_key (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
-            room_id INT NOT NULL,
+            digital_lock_id INT NOT NULL,
             secret_key BINARY(32) NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES user(id),
-            FOREIGN KEY (room_id) REFERENCES room(id)
+            FOREIGN KEY (digital_lock_id) REFERENCES digital_lock(id)
         );
     """
     create_table('digital_key', query=create_digital_key_table_query, cursor=cursor)
