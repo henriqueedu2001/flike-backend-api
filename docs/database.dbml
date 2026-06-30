@@ -49,7 +49,7 @@ Table DigitalLock {
 Table DigitalKey {
   id integer [primary key]
   user_id integer [ref: > User.id]
-  room_id integer [ref: > Room.id]
+  digital_lock_id integer [ref: > DigitalLock.id]
   secret_key varchar
   created_at timestamp
 }
