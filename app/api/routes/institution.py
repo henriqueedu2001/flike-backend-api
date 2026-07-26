@@ -13,6 +13,12 @@ def get_all_institution(db: Database = Depends(get_database)):
     return institutions
 
 
+@router.get('/institutions/search')
+def search_institutions(q: str, db: Database = Depends(get_database)):
+    repo = InstitutionRepository(db)
+    return repo.search_institutions(q)
+
+
 @router.post('/institution/new')
 def create_institution(user_id: int, institution_name: str, db: Database = Depends(get_database)):
     repo = InstitutionRepository(db)

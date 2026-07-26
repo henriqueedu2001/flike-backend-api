@@ -15,3 +15,14 @@ class CreateBuildingRequest(BaseModel):
 class CreateBuildingResponse(BaseModel):
     building_id: int
     created_at: datetime
+
+
+class UpdateBuildingRequest(BaseModel):
+    institution_id: int
+    name: str
+    address_line_1: str
+    address_line_2: str
+    city: str
+    state: str
+    zip_code: str
+    country: str

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\), f\\) for f in ['app/main.py','app/api/routes/admin.py','app/api/routes/user.py','app/api/routes/digital_key.py','app/api/routes/digital_lock.py','app/api/routes/institution.py','app/api/routes/building.py','app/api/routes/room.py','app/database/repositories.py','app/schemas/institution_models.py','app/schemas/building_models.py','app/schemas/room_models.py','app/schemas/digital_lock_models.py','app/schemas/digital_key_models.py','app/schemas/user_models.py','app/modules/auth/jwt_token.py','scripts/create_db.py']]\")",
+      "Bash(pkill -f \"uvicorn app.main:app --host 127.0.0.1 --port 8123\")",
+      "Bash(cat /tmp/uvicorn_test3.log 2>/dev/null | tail -40; echo \"---\"; pgrep -af \"8125\" )",
+      "Bash(pkill -f \"uvicorn app.main:app\")",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

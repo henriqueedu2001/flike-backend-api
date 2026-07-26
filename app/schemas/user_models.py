@@ -8,3 +8,13 @@ class CreateUserRequest(BaseModel):
 
 class CreateUserResponse(BaseModel):
     user_id: int
+
+
+class UpdateUserRequest(BaseModel):
+    name: str
+    email: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str

@@ -13,6 +13,12 @@ def get_all_institution(db: Database = Depends(get_database)):
     return rooms
 
 
+@router.get('/rooms/search')
+def search_rooms(q: str, building_id: Optional[int] = None, db: Database = Depends(get_database)):
+    repo = RoomRepository(db)
+    return repo.search_rooms(q, building_id)
+
+
 @router.post('/room/new')
 def create_room(room_data: CreateRoomRequest, db: Database = Depends(get_database)) -> CreateRoomResponse:
     repo = RoomRepository(db)

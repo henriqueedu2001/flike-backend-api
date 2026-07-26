@@ -22,3 +22,11 @@ def validate_jwt_token(token: str):
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return False
     return True
+
+
+def get_user_id_from_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
+    return payload.get('user_id')

@@ -7,13 +7,23 @@ from http import HTTPStatus
 
 router = APIRouter()
 
+def _serialize_digital_lock(lock: dict) -> dict:
+    lock['secret_key'] = bytes(lock['secret_key']).hex()
+    return lock
+
+
 @router.get('/digital_lock/all')
 def get_all_digital_locks(db: Database = Depends(get_database)):
     repo = DigitalLockRepository(db)
     digital_locks = repo.get_all_digital_locks()
-    for lock in digital_locks:
-        lock['secret_key'] = BinaryHandler.get_hex_str_from_bytes(lock['secret_key'])
-    return digital_locks
+    return [_serialize_digital_lock(lock) for lock in digital_locks]
+
+
+@router.get('/digital_lock')
+def get_digital_locks_by_room(room_id: int, db: Database = Depends(get_database)):
+    repo = DigitalLockRepository(db)
+    digital_locks = repo.get_locks_by_room(room_id)
+    return [_serialize_digital_lock(lock) for lock in digital_locks]
 
 
 @router.post('/digital_lock/new')

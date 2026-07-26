@@ -4,13 +4,16 @@ from datetime import datetime
 from collections.abc import Callable
 from mysql.connector.cursor import MySQLCursor
 from mysql.connector import MySQLConnection
+from app.services.env import get_env_variables
+
+env_vars = get_env_variables()
 
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'admin',
-    'password': 'admin123',
-    'database': 'flike',
-    'port': '5469'
+    'host': env_vars.DB_HOST,
+    'user': env_vars.DB_USER,
+    'password': env_vars.DB_PASSWORD,
+    'database': env_vars.DB_DATABASE,
+    'port': env_vars.DB_PORT
 }
 
 def main():
@@ -29,7 +32,7 @@ def main():
                     create_room_table(cursor)
                     create_digital_lock_table(cursor)
                     create_digital_key_table(cursor)
-                    create_digital_lock_table(cursor)
+                    create_digital_key_request_table(cursor)
                     create_event_log_table(cursor)
                 except Exception as error:
                     log_message(f'Error: {error}')
@@ -141,12 +144,30 @@ def create_digital_key_table(cursor: MySQLCursor):
             user_id INT NOT NULL,
             digital_lock_id INT NOT NULL,
             payload BINARY(48) NOT NULL,
+            expires_at TIMESTAMP NULL,
+            used BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES user(id),
             FOREIGN KEY (digital_lock_id) REFERENCES digital_lock(id)
         );
     """
     create_table('digital_key', query=create_digital_key_table_query, cursor=cursor)
+    return
+
+
+def create_digital_key_request_table(cursor: MySQLCursor):
+    create_digital_key_request_table_query = """
+        CREATE TABLE IF NOT EXISTS digital_key_request (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            digital_lock_id INT NOT NULL,
+            status VARCHAR(255) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES user(id),
+            FOREIGN KEY (digital_lock_id) REFERENCES digital_lock(id)
+        );
+    """
+    create_table('digital_key_request', query=create_digital_key_request_table_query, cursor=cursor)
     return
 
 

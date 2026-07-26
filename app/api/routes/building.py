@@ -13,6 +13,12 @@ def get_all_institution(db: Database = Depends(get_database)):
     return buildings
 
 
+@router.get('/buildings/search')
+def search_buildings(q: str, institution_id: Optional[int] = None, db: Database = Depends(get_database)):
+    repo = BuildingRepository(db)
+    return repo.search_buildings(q, institution_id)
+
+
 @router.post('/building/new')
 def create_institution(building_data: CreateBuildingRequest, db: Database = Depends(get_database)) -> CreateBuildingResponse:
     repo = BuildingRepository(db)

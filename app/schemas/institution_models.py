@@ -2,10 +2,14 @@ from pydantic import BaseModel
 from datetime import datetime
 
 class CreateInstitutionRequest(BaseModel):
-    user_id: str
-    building_name: str
+    owner_id: int
+    name: str
 
 
 class CreateInstitutionResponse(BaseModel):
     institution_id: int
     created_at: datetime
+
+
+class UpdateInstitutionRequest(BaseModel):
+    name: str

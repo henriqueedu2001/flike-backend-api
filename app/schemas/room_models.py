@@ -10,3 +10,9 @@ class CreateRoomRequest(BaseModel):
 class CreateRoomResponse(BaseModel):
     room_id: int
     created_at: datetime
+
+
+class UpdateRoomRequest(BaseModel):
+    building_id: int
+    name: str
+    number: str
