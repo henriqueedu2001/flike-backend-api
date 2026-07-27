@@ -8,6 +8,7 @@ from app.schemas.digital_lock_models import *
 from app.schemas.digital_key_models import *
 from app.api.routes.auth import verify_token
 from app.api.routes.digital_lock import _serialize_digital_lock
+from app.modules.auth.jwt_token import get_user_id_from_token
 from datetime import datetime, timedelta
 from http import HTTPStatus
 
@@ -17,54 +18,105 @@ router = APIRouter(prefix='/admin', dependencies=[Depends(verify_token)])
 # ---- Institutions ----
 
 @router.get('/institutions')
-def get_institutions(db: Database = Depends(get_database)):
+def get_institutions(
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = InstitutionRepository(db)
-    return repo.get_all_institutions()
+    user_id = get_user_id_from_token(token)
+    return repo.get_institutions_by_owner(user_id)
 
 
 @router.post('/institutions')
-def create_institution(institution_data: CreateInstitutionRequest, db: Database = Depends(get_database)) -> CreateInstitutionResponse:
+def create_institution(
+    institution_data: CreateInstitutionRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+) -> CreateInstitutionResponse:
     repo = InstitutionRepository(db)
+    user_id = get_user_id_from_token(token)
 
     try:
-        institution_id, created_at = repo.create_institution(institution_data.owner_id, institution_data.name)
+        institution_id, created_at = repo.create_institution(user_id, institution_data.name)
         return CreateInstitutionResponse(institution_id=institution_id, created_at=created_at)
     except Exception as error:
         raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
 
 
 @router.put('/institutions/{id}')
-def update_institution(id: int, institution_data: UpdateInstitutionRequest, db: Database = Depends(get_database)):
+def update_institution(
+    id: int,
+    institution_data: UpdateInstitutionRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = InstitutionRepository(db)
+    user_id = get_user_id_from_token(token)
 
     try:
-        return repo.update_institution(id, institution_data.name)
+        institution = repo.get_institution(id)
     except InstitutionNotFound as error:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if institution.get('owner_id') != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
+
+    return repo.update_institution(id, institution_data.name)
 
 
 @router.delete('/institutions/{id}')
-def delete_institution(id: int, db: Database = Depends(get_database)):
+def delete_institution(
+    id: int,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = InstitutionRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        institution = repo.get_institution(id)
+    except InstitutionNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if institution.get('owner_id') != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
 
     try:
         repo.delete_institution(id)
-    except InstitutionNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+    except ResourceInUse as error:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
     return {"message": "institution deleted successfully"}
 
 
 # ---- Buildings ----
 
 @router.get('/buildings')
-def get_buildings(db: Database = Depends(get_database)):
+def get_buildings(
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = BuildingRepository(db)
-    return repo.get_all_buildings()
+    user_id = get_user_id_from_token(token)
+    return repo.get_buildings_by_owner(user_id)
 
 
 @router.post('/buildings')
-def create_building(building_data: CreateBuildingRequest, db: Database = Depends(get_database)) -> CreateBuildingResponse:
+def create_building(
+    building_data: CreateBuildingRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+) -> CreateBuildingResponse:
+    institution_repo = InstitutionRepository(db)
     repo = BuildingRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        institution = institution_repo.get_institution(building_data.institution_id)
+    except InstitutionNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if institution.get('owner_id') != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
 
     try:
         building_id, created_at = repo.create_building(
@@ -83,8 +135,31 @@ def create_building(building_data: CreateBuildingRequest, db: Database = Depends
 
 
 @router.put('/buildings/{id}')
-def update_building(id: int, building_data: UpdateBuildingRequest, db: Database = Depends(get_database)):
+def update_building(
+    id: int,
+    building_data: UpdateBuildingRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = BuildingRepository(db)
+    institution_repo = InstitutionRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = repo.get_owner_id(id)
+    except BuildingNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
+
+    try:
+        target_institution = institution_repo.get_institution(building_data.institution_id)
+    except InstitutionNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if target_institution.get('owner_id') != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='cannot move building to an institution you do not own')
 
     try:
         return repo.update_building(
@@ -103,27 +178,60 @@ def update_building(id: int, building_data: UpdateBuildingRequest, db: Database 
 
 
 @router.delete('/buildings/{id}')
-def delete_building(id: int, db: Database = Depends(get_database)):
+def delete_building(
+    id: int,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = BuildingRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = repo.get_owner_id(id)
+    except BuildingNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
 
     try:
         repo.delete_building(id)
     except BuildingNotFound as error:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+    except ResourceInUse as error:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
     return {"message": "building deleted successfully"}
 
 
 # ---- Rooms ----
 
 @router.get('/rooms')
-def get_rooms(db: Database = Depends(get_database)):
+def get_rooms(
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = RoomRepository(db)
-    return repo.get_all_rooms()
+    user_id = get_user_id_from_token(token)
+    return repo.get_rooms_by_owner(user_id)
 
 
 @router.post('/rooms')
-def create_room(room_data: CreateRoomRequest, db: Database = Depends(get_database)) -> CreateRoomResponse:
+def create_room(
+    room_data: CreateRoomRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+) -> CreateRoomResponse:
+    building_repo = BuildingRepository(db)
     repo = RoomRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = building_repo.get_owner_id(room_data.building_id)
+    except BuildingNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
 
     try:
         room_id, created_at = repo.create_room(
@@ -137,8 +245,31 @@ def create_room(room_data: CreateRoomRequest, db: Database = Depends(get_databas
 
 
 @router.put('/rooms/{id}')
-def update_room(id: int, room_data: UpdateRoomRequest, db: Database = Depends(get_database)):
+def update_room(
+    id: int,
+    room_data: UpdateRoomRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = RoomRepository(db)
+    building_repo = BuildingRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = repo.get_owner_id(id)
+    except RoomNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
+
+    try:
+        target_owner_id = building_repo.get_owner_id(room_data.building_id)
+    except BuildingNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if target_owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='cannot move room to a building you do not own')
 
     try:
         return repo.update_room(id, building_id=room_data.building_id, name=room_data.name, number=room_data.number)
@@ -147,28 +278,61 @@ def update_room(id: int, room_data: UpdateRoomRequest, db: Database = Depends(ge
 
 
 @router.delete('/rooms/{id}')
-def delete_room(id: int, db: Database = Depends(get_database)):
+def delete_room(
+    id: int,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = RoomRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = repo.get_owner_id(id)
+    except RoomNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
 
     try:
         repo.delete_room(id)
     except RoomNotFound as error:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+    except ResourceInUse as error:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
     return {"message": "room deleted successfully"}
 
 
 # ---- Digital Locks ----
 
 @router.get('/locks')
-def get_locks(db: Database = Depends(get_database)):
+def get_locks(
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = DigitalLockRepository(db)
-    locks = repo.get_all_digital_locks()
+    user_id = get_user_id_from_token(token)
+    locks = repo.get_locks_by_owner(user_id)
     return [_serialize_digital_lock(lock) for lock in locks]
 
 
 @router.post('/locks')
-def create_lock(lock_data: CreateDigitalLockRequest, db: Database = Depends(get_database)) -> CreateDigitalLockResponse:
+def create_lock(
+    lock_data: CreateDigitalLockRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+) -> CreateDigitalLockResponse:
+    room_repo = RoomRepository(db)
     repo = DigitalLockRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = room_repo.get_owner_id(lock_data.room_id)
+    except RoomNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
 
     try:
         digital_lock_id, created_at = repo.create_digital_lock(room_id=lock_data.room_id)
@@ -178,8 +342,31 @@ def create_lock(lock_data: CreateDigitalLockRequest, db: Database = Depends(get_
 
 
 @router.put('/locks/{id}')
-def update_lock(id: int, lock_data: UpdateDigitalLockRequest, db: Database = Depends(get_database)):
+def update_lock(
+    id: int,
+    lock_data: UpdateDigitalLockRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = DigitalLockRepository(db)
+    room_repo = RoomRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = repo.get_institution_owner(id)
+    except DigitalLockNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
+
+    try:
+        target_owner_id = room_repo.get_owner_id(lock_data.room_id)
+    except RoomNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if target_owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='cannot move digital lock to a room you do not own')
 
     try:
         lock = repo.update_digital_lock(id, room_id=lock_data.room_id)
@@ -190,13 +377,28 @@ def update_lock(id: int, lock_data: UpdateDigitalLockRequest, db: Database = Dep
 
 
 @router.delete('/locks/{id}')
-def delete_lock(id: int, db: Database = Depends(get_database)):
+def delete_lock(
+    id: int,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = DigitalLockRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = repo.get_institution_owner(id)
+    except DigitalLockNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
 
     try:
         repo.delete_digital_lock(id)
     except DigitalLockNotFound as error:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+    except ResourceInUse as error:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
     return {"message": "digital lock deleted successfully"}
 
 
@@ -206,9 +408,23 @@ DEFAULT_KEY_VALIDITY = timedelta(hours=24)
 
 
 @router.post('/keys/issue')
-def issue_digital_key(key_data: IssueDigitalKeyRequest, db: Database = Depends(get_database)) -> IssueDigitalKeyResponse:
+def issue_digital_key(
+    key_data: IssueDigitalKeyRequest,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+) -> IssueDigitalKeyResponse:
     repo = DigitalKeyRepository(db)
+    lock_repo = DigitalLockRepository(db)
+    user_id = get_user_id_from_token(token)
     expires_at = key_data.expires_at or (datetime.now() + DEFAULT_KEY_VALIDITY)
+
+    try:
+        owner_id = lock_repo.get_institution_owner(key_data.lock_id)
+    except DigitalLockNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can issue keys for this lock')
 
     try:
         digital_key_id, created_at = repo.create_digital_key(
@@ -226,24 +442,40 @@ def issue_digital_key(key_data: IssueDigitalKeyRequest, db: Database = Depends(g
 # ---- Digital Key requests ----
 
 @router.get('/keys/requests')
-def get_key_requests(status: Optional[str] = None, db: Database = Depends(get_database)):
+def get_key_requests(
+    token: Annotated[str, Depends(verify_token)],
+    status: Optional[str] = None,
+    db: Database = Depends(get_database)
+):
     repo = DigitalKeyRequestRepository(db)
-    return repo.get_all_requests(status)
+    user_id = get_user_id_from_token(token)
+    return repo.get_requests_by_owner(user_id, status)
 
 
 @router.post('/keys/requests/{id}/approve')
 def approve_key_request(
     id: int,
+    token: Annotated[str, Depends(verify_token)],
     approve_data: Optional[ApproveDigitalKeyRequestRequest] = None,
     db: Database = Depends(get_database)
 ) -> ApproveDigitalKeyRequestResponse:
     request_repo = DigitalKeyRequestRepository(db)
     key_repo = DigitalKeyRepository(db)
+    lock_repo = DigitalLockRepository(db)
+    user_id = get_user_id_from_token(token)
 
     try:
         request = request_repo.get_request(id)
     except DigitalKeyRequestNotFound as error:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    try:
+        owner_id = lock_repo.get_institution_owner(request['digital_lock_id'])
+    except DigitalLockNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can approve this request')
 
     if request.get('status') != 'pending':
         raise HTTPException(
@@ -268,13 +500,27 @@ def approve_key_request(
 
 
 @router.post('/keys/requests/{id}/reject')
-def reject_key_request(id: int, db: Database = Depends(get_database)):
+def reject_key_request(
+    id: int,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
     repo = DigitalKeyRequestRepository(db)
+    lock_repo = DigitalLockRepository(db)
+    user_id = get_user_id_from_token(token)
 
     try:
         request = repo.get_request(id)
     except DigitalKeyRequestNotFound as error:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    try:
+        owner_id = lock_repo.get_institution_owner(request['digital_lock_id'])
+    except DigitalLockNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can reject this request')
 
     if request.get('status') != 'pending':
         raise HTTPException(

@@ -2,7 +2,6 @@ from pydantic import BaseModel
 from datetime import datetime
 
 class CreateInstitutionRequest(BaseModel):
-    owner_id: int
     name: str
 
 

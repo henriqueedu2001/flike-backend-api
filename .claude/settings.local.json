@@ -5,7 +5,10 @@
       "Bash(pkill -f \"uvicorn app.main:app --host 127.0.0.1 --port 8123\")",
       "Bash(cat /tmp/uvicorn_test3.log 2>/dev/null | tail -40; echo \"---\"; pgrep -af \"8125\" )",
       "Bash(pkill -f \"uvicorn app.main:app\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"http://127.0.0.1:8000/digital_key/all\")",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://127.0.0.1:8000/digital_key/all\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/home/mperugini/tcc/flike-backend-api/app/api/routes/admin.py'\\).read\\(\\)\\)\")"
     ]
   }
 }

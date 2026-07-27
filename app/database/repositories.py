@@ -1,11 +1,16 @@
 from datetime import datetime
 from typing import *
+from mysql.connector.errors import IntegrityError
 from app.database.database_manager import Database
 from app.modules.auth.hashes import secure_hash
 from app.modules.auth.salt_gen import generate_salt
 from app.modules.cmac.key import *
 
 class UserNotFound(Exception):
+    pass
+
+
+class ResourceInUse(Exception):
     pass
 
 
@@ -187,6 +192,12 @@ class InstitutionRepository:
         return institutions
 
 
+    def get_institutions_by_owner(self, owner_id: int):
+        query = 'SELECT * FROM institution WHERE owner_id = %s;'
+        self.db.execute(query, (owner_id,))
+        return self.db.fetch_all()
+
+
     def get_institution(self, institution_id: int):
         query = 'SELECT * FROM institution WHERE id = %s;'
         self.db.execute(query, (institution_id,))
@@ -216,7 +227,11 @@ class InstitutionRepository:
         self.get_institution(institution_id)
 
         query = 'DELETE FROM institution WHERE id = %s'
-        self.db.execute(query, (institution_id,))
+        try:
+            self.db.execute(query, (institution_id,))
+        except IntegrityError:
+            self.db.rollback()
+            raise ResourceInUse(f'institution with id = {institution_id} still has buildings attached to it')
         self.db.commit()
         return
 
@@ -255,6 +270,17 @@ class BuildingRepository:
         return buildings
 
 
+    def get_buildings_by_owner(self, owner_id: int):
+        query = """
+            SELECT building.*
+            FROM building
+            JOIN institution ON building.institution_id = institution.id
+            WHERE institution.owner_id = %s;
+        """
+        self.db.execute(query, (owner_id,))
+        return self.db.fetch_all()
+
+
     def get_building(self, building_id: int):
         query = 'SELECT * FROM building WHERE id = %s;'
         self.db.execute(query, (building_id,))
@@ -263,6 +289,21 @@ class BuildingRepository:
         if not building:
             raise BuildingNotFound(f'building with id = {building_id} not found in the database')
         return building
+
+
+    def get_owner_id(self, building_id: int) -> int:
+        query = """
+            SELECT institution.owner_id AS owner_id
+            FROM building
+            JOIN institution ON building.institution_id = institution.id
+            WHERE building.id = %s;
+        """
+        self.db.execute(query, (building_id,))
+        row = self.db.fetch_one()
+
+        if not row:
+            raise BuildingNotFound(f'building with id = {building_id} not found in the database')
+        return row.get('owner_id')
 
 
     def search_buildings(self, q: str, institution_id: Optional[int] = None):
@@ -307,7 +348,11 @@ class BuildingRepository:
         self.get_building(building_id)
 
         query = 'DELETE FROM building WHERE id = %s'
-        self.db.execute(query, (building_id,))
+        try:
+            self.db.execute(query, (building_id,))
+        except IntegrityError:
+            self.db.rollback()
+            raise ResourceInUse(f'building with id = {building_id} still has rooms attached to it')
         self.db.commit()
         return
 
@@ -376,6 +421,18 @@ class RoomRepository:
         return rooms
 
 
+    def get_rooms_by_owner(self, owner_id: int):
+        query = """
+            SELECT room.*
+            FROM room
+            JOIN building ON room.building_id = building.id
+            JOIN institution ON building.institution_id = institution.id
+            WHERE institution.owner_id = %s;
+        """
+        self.db.execute(query, (owner_id,))
+        return self.db.fetch_all()
+
+
     def get_room(self, room_id: int):
         query = 'SELECT * FROM room WHERE id = %s;'
         self.db.execute(query, (room_id,))
@@ -384,6 +441,22 @@ class RoomRepository:
         if not room:
             raise RoomNotFound(f'room with id = {room_id} not found in the database')
         return room
+
+
+    def get_owner_id(self, room_id: int) -> int:
+        query = """
+            SELECT institution.owner_id AS owner_id
+            FROM room
+            JOIN building ON room.building_id = building.id
+            JOIN institution ON building.institution_id = institution.id
+            WHERE room.id = %s;
+        """
+        self.db.execute(query, (room_id,))
+        row = self.db.fetch_one()
+
+        if not row:
+            raise RoomNotFound(f'room with id = {room_id} not found in the database')
+        return row.get('owner_id')
 
 
     def search_rooms(self, q: str, building_id: Optional[int] = None):
@@ -409,7 +482,11 @@ class RoomRepository:
         self.get_room(room_id)
 
         query = 'DELETE FROM room WHERE id = %s'
-        self.db.execute(query, (room_id,))
+        try:
+            self.db.execute(query, (room_id,))
+        except IntegrityError:
+            self.db.rollback()
+            raise ResourceInUse(f'room with id = {room_id} still has digital locks attached to it')
         self.db.commit()
         return
 
@@ -451,6 +528,19 @@ class DigitalLockRepository:
         return digital_locks
 
 
+    def get_locks_by_owner(self, owner_id: int):
+        query = """
+            SELECT digital_lock.*
+            FROM digital_lock
+            JOIN room ON digital_lock.room_id = room.id
+            JOIN building ON room.building_id = building.id
+            JOIN institution ON building.institution_id = institution.id
+            WHERE institution.owner_id = %s;
+        """
+        self.db.execute(query, (owner_id,))
+        return self.db.fetch_all()
+
+
     def get_digital_lock(self, digital_lock_id: int):
         query = 'SELECT * FROM digital_lock WHERE id = %s;'
         self.db.execute(query, (digital_lock_id,))
@@ -467,6 +557,23 @@ class DigitalLockRepository:
         return self.db.fetch_all()
 
 
+    def get_institution_owner(self, digital_lock_id: int) -> int:
+        query = """
+            SELECT institution.owner_id AS owner_id
+            FROM digital_lock
+            JOIN room ON digital_lock.room_id = room.id
+            JOIN building ON room.building_id = building.id
+            JOIN institution ON building.institution_id = institution.id
+            WHERE digital_lock.id = %s
+        """
+        self.db.execute(query, (digital_lock_id,))
+        row = self.db.fetch_one()
+
+        if not row:
+            raise DigitalLockNotFound(f'digital_lock with id = {digital_lock_id} not found in the database')
+        return row.get('owner_id')
+
+
     def update_digital_lock(self, digital_lock_id: int, room_id: int):
         self.get_digital_lock(digital_lock_id)
 
@@ -480,7 +587,13 @@ class DigitalLockRepository:
         self.get_digital_lock(digital_lock_id)
 
         query = 'DELETE FROM digital_lock WHERE id = %s'
-        self.db.execute(query, (digital_lock_id,))
+        try:
+            self.db.execute(query, (digital_lock_id,))
+        except IntegrityError:
+            self.db.rollback()
+            raise ResourceInUse(
+                f'digital_lock with id = {digital_lock_id} still has issued keys or key requests attached to it'
+            )
         self.db.commit()
         return
 
@@ -598,6 +711,25 @@ class DigitalKeyRequestRepository:
         else:
             query = 'SELECT * FROM digital_key_request;'
             self.db.execute(query)
+        return self.db.fetch_all()
+
+
+    def get_requests_by_owner(self, owner_id: int, status: Optional[str] = None):
+        query = """
+            SELECT digital_key_request.*
+            FROM digital_key_request
+            JOIN digital_lock ON digital_key_request.digital_lock_id = digital_lock.id
+            JOIN room ON digital_lock.room_id = room.id
+            JOIN building ON room.building_id = building.id
+            JOIN institution ON building.institution_id = institution.id
+            WHERE institution.owner_id = %s
+        """
+        params = [owner_id]
+        if status is not None:
+            query += ' AND digital_key_request.status = %s'
+            params.append(status)
+        query += ';'
+        self.db.execute(query, tuple(params))
         return self.db.fetch_all()
 
 
