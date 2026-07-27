@@ -303,6 +303,27 @@ def delete_room(
     return {"message": "room deleted successfully"}
 
 
+@router.get('/rooms/{id}/key-holders')
+def get_room_key_holders(
+    id: int,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
+    room_repo = RoomRepository(db)
+    key_repo = DigitalKeyRepository(db)
+    user_id = get_user_id_from_token(token)
+
+    try:
+        owner_id = room_repo.get_owner_id(id)
+    except RoomNotFound as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+
+    if owner_id != user_id:
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can perform this action')
+
+    return key_repo.get_key_holders_by_room(id)
+
+
 # ---- Digital Locks ----
 
 @router.get('/locks')

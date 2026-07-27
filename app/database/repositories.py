@@ -631,6 +631,18 @@ class DigitalKeyRepository:
         return digital_keys
 
 
+    def get_key_holders_by_room(self, room_id: int):
+        query = """
+            SELECT DISTINCT user.id AS user_id, user.name, user.email
+            FROM digital_key
+            JOIN digital_lock ON digital_key.digital_lock_id = digital_lock.id
+            JOIN user ON digital_key.user_id = user.id
+            WHERE digital_lock.room_id = %s;
+        """
+        self.db.execute(query, (room_id,))
+        return self.db.fetch_all()
+
+
     def get_digital_key(self, digital_key_id: int):
         query = 'SELECT * FROM digital_key WHERE id = %s;'
         self.db.execute(query, (digital_key_id,))
