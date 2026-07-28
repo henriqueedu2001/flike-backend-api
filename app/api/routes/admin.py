@@ -324,6 +324,27 @@ def get_room_key_holders(
     return key_repo.get_key_holders_by_room(id)
 
 
+@router.get('/key-holders')
+def get_key_holders(
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
+    key_repo = DigitalKeyRepository(db)
+    user_id = get_user_id_from_token(token)
+    return key_repo.get_key_holders_by_owner(user_id)
+
+
+@router.get('/key-holders/{id}/history')
+def get_key_holder_history(
+    id: int,
+    token: Annotated[str, Depends(verify_token)],
+    db: Database = Depends(get_database)
+):
+    key_repo = DigitalKeyRepository(db)
+    user_id = get_user_id_from_token(token)
+    return key_repo.get_key_usage_history(owner_id=user_id, user_id=id)
+
+
 # ---- Digital Locks ----
 
 @router.get('/locks')

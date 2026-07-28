@@ -61,6 +61,22 @@ def create_digital_lock(digital_key_data: CreateDigitalKeyRequest, db: Database 
         raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
 
 
+@router.post('/digital_key/use')
+def use_digital_key(request_data: UseDigitalKeyRequest, db: Database = Depends(get_database)) -> UseDigitalKeyResponse:
+    repo = DigitalKeyRepository(db)
+    payload = BinaryHandler.encode_bytes_from_hex_str(request_data.payload, length=48)
+
+    try:
+        digital_key_id, used_at = repo.use_digital_key(payload)
+        return UseDigitalKeyResponse(digital_key_id=digital_key_id, used_at=used_at)
+    except (DigitalKeyNotFound, DigitalLockNotFound) as error:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
+    except DigitalKeyAlreadyUsed as error:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
+    except InvalidDigitalKeySignature as error:
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail=str(error))
+
+
 @router.post('/digital_key/request')
 def request_digital_key(
     request_data: RequestDigitalKeyRequest,

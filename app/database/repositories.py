@@ -49,6 +49,14 @@ class DigitalKeyRequestNotFound(Exception):
     pass
 
 
+class DigitalKeyAlreadyUsed(Exception):
+    pass
+
+
+class InvalidDigitalKeySignature(Exception):
+    pass
+
+
 class UserRepository:
     def __init__(self, db: Database):
         self.db = db 
@@ -633,13 +641,57 @@ class DigitalKeyRepository:
 
     def get_key_holders_by_room(self, room_id: int):
         query = """
-            SELECT DISTINCT user.id AS user_id, user.name, user.email
+            SELECT user.id AS user_id, user.name, user.email,
+                   MAX(digital_key.used) AS used,
+                   MAX(digital_key.used_at) AS used_at
             FROM digital_key
             JOIN digital_lock ON digital_key.digital_lock_id = digital_lock.id
             JOIN user ON digital_key.user_id = user.id
-            WHERE digital_lock.room_id = %s;
+            WHERE digital_lock.room_id = %s
+            GROUP BY user.id, user.name, user.email;
         """
         self.db.execute(query, (room_id,))
+        return self.db.fetch_all()
+
+
+    def get_key_holders_by_owner(self, owner_id: int):
+        query = """
+            SELECT user.id AS user_id, user.name, user.email,
+                   MAX(digital_key.used) AS used,
+                   MAX(digital_key.used_at) AS used_at
+            FROM digital_key
+            JOIN digital_lock ON digital_key.digital_lock_id = digital_lock.id
+            JOIN room ON digital_lock.room_id = room.id
+            JOIN building ON room.building_id = building.id
+            JOIN institution ON building.institution_id = institution.id
+            JOIN user ON digital_key.user_id = user.id
+            WHERE institution.owner_id = %s
+            GROUP BY user.id, user.name, user.email;
+        """
+        self.db.execute(query, (owner_id,))
+        return self.db.fetch_all()
+
+
+    def get_key_usage_history(self, owner_id: int, user_id: int):
+        query = """
+            SELECT digital_key.id AS key_id,
+                   digital_key.used,
+                   digital_key.used_at,
+                   digital_key.expires_at,
+                   digital_key.created_at,
+                   room.id AS room_id,
+                   room.name AS room_name,
+                   building.id AS building_id,
+                   building.name AS building_name
+            FROM digital_key
+            JOIN digital_lock ON digital_key.digital_lock_id = digital_lock.id
+            JOIN room ON digital_lock.room_id = room.id
+            JOIN building ON room.building_id = building.id
+            JOIN institution ON building.institution_id = institution.id
+            WHERE institution.owner_id = %s AND digital_key.user_id = %s
+            ORDER BY digital_key.created_at DESC;
+        """
+        self.db.execute(query, (owner_id, user_id))
         return self.db.fetch_all()
 
 
@@ -651,6 +703,40 @@ class DigitalKeyRepository:
         if not digital_key:
             raise DigitalKeyNotFound(f'digital_key with id = {digital_key_id} not found in the database')
         return digital_key
+
+
+    def get_digital_key_by_payload(self, payload: bytes):
+        query = 'SELECT * FROM digital_key WHERE payload = %s;'
+        self.db.execute(query, (payload,))
+        digital_key = self.db.fetch_one()
+
+        if not digital_key:
+            raise DigitalKeyNotFound('digital_key with the given payload not found in the database')
+        return digital_key
+
+
+    def use_digital_key(self, payload: bytes):
+        digital_key = self.get_digital_key_by_payload(payload)
+
+        if digital_key['used']:
+            raise DigitalKeyAlreadyUsed(f"digital_key with id = {digital_key['id']} has already been used")
+
+        lock_query = 'SELECT secret_key FROM digital_lock WHERE id = %s;'
+        self.db.execute(lock_query, (digital_key['digital_lock_id'],))
+        lock_row = self.db.fetch_one()
+
+        if not lock_row:
+            raise DigitalLockNotFound(f"digital_lock with id = {digital_key['digital_lock_id']} not found in the database")
+
+        secret_key = lock_row.get('secret_key')
+        if not AES_CMAC.validate_signature(payload, Key(secret_key)):
+            raise InvalidDigitalKeySignature('digital_key signature is invalid')
+
+        used_at = datetime.now()
+        update_query = 'UPDATE digital_key SET used = TRUE, used_at = %s WHERE id = %s;'
+        self.db.execute(update_query, (used_at, digital_key['id']))
+        self.db.commit()
+        return digital_key['id'], used_at
 
 
     def get_digital_keys_by_user(self, user_id: int):

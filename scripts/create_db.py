@@ -146,6 +146,7 @@ def create_digital_key_table(cursor: MySQLCursor):
             payload BINARY(48) NOT NULL,
             expires_at TIMESTAMP NULL,
             used BOOLEAN NOT NULL DEFAULT FALSE,
+            used_at TIMESTAMP NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES user(id),
             FOREIGN KEY (digital_lock_id) REFERENCES digital_lock(id)

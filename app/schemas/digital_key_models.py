@@ -41,3 +41,12 @@ class ApproveDigitalKeyRequestResponse(BaseModel):
     request_id: int
     digital_key_id: int
     created_at: datetime
+
+
+class UseDigitalKeyRequest(BaseModel):
+    payload: str
+
+
+class UseDigitalKeyResponse(BaseModel):
+    digital_key_id: int
+    used_at: datetime

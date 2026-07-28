@@ -8,7 +8,12 @@
       "Bash(python3 -c ' *)",
       "Bash(curl -s \"http://127.0.0.1:8000/digital_key/all\")",
       "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://127.0.0.1:8000/digital_key/all\")",
-      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/home/mperugini/tcc/flike-backend-api/app/api/routes/admin.py'\\).read\\(\\)\\)\")"
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/home/mperugini/tcc/flike-backend-api/app/api/routes/admin.py'\\).read\\(\\)\\)\")",
+      "Bash(xargs -I{} echo {})",
+      "Bash(git -C /home/mperugini/tcc/flike-backend-api log --oneline -10)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('app/api/routes/digital_key.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/database/repositories.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/schemas/digital_key_models.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python3 -c \"from app.api.routes import digital_key; print\\('import ok'\\)\")",
+      "Bash(.venv/bin/python -c ' *)"
     ]
   }
 }
