@@ -77,6 +77,17 @@ def use_digital_key(request_data: UseDigitalKeyRequest, db: Database = Depends(g
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail=str(error))
 
 
+@router.get('/digital_key/requests')
+def get_my_digital_key_requests(
+    token: Annotated[str, Depends(verify_token)],
+    status: Optional[str] = None,
+    db: Database = Depends(get_database)
+):
+    repo = DigitalKeyRequestRepository(db)
+    user_id = get_user_id_from_token(token)
+    return repo.get_requests_by_user(user_id, status)
+
+
 @router.post('/digital_key/request')
 def request_digital_key(
     request_data: RequestDigitalKeyRequest,

@@ -13,7 +13,9 @@
       "Bash(git -C /home/mperugini/tcc/flike-backend-api log --oneline -10)",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('app/api/routes/digital_key.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/database/repositories.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/schemas/digital_key_models.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(python3 -c \"from app.api.routes import digital_key; print\\('import ok'\\)\")",
-      "Bash(.venv/bin/python -c ' *)"
+      "Bash(.venv/bin/python -c ' *)",
+      "Read(//home/mperugini/tcc/portotipo-front/causplock-frontend/**)",
+      "Bash(npx tsc *)"
     ]
   }
 }

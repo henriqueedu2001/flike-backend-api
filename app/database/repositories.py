@@ -814,8 +814,17 @@ class DigitalKeyRequestRepository:
 
     def get_requests_by_owner(self, owner_id: int, status: Optional[str] = None):
         query = """
-            SELECT digital_key_request.*
+            SELECT digital_key_request.id,
+                   digital_key_request.user_id,
+                   digital_key_request.digital_lock_id,
+                   digital_key_request.status,
+                   digital_key_request.created_at,
+                   user.name AS user_name,
+                   user.email AS user_email,
+                   room.name AS room_name,
+                   building.name AS building_name
             FROM digital_key_request
+            JOIN user ON digital_key_request.user_id = user.id
             JOIN digital_lock ON digital_key_request.digital_lock_id = digital_lock.id
             JOIN room ON digital_lock.room_id = room.id
             JOIN building ON room.building_id = building.id
@@ -823,6 +832,30 @@ class DigitalKeyRequestRepository:
             WHERE institution.owner_id = %s
         """
         params = [owner_id]
+        if status is not None:
+            query += ' AND digital_key_request.status = %s'
+            params.append(status)
+        query += ';'
+        self.db.execute(query, tuple(params))
+        return self.db.fetch_all()
+
+
+    def get_requests_by_user(self, user_id: int, status: Optional[str] = None):
+        query = """
+            SELECT digital_key_request.id,
+                   digital_key_request.user_id,
+                   digital_key_request.digital_lock_id,
+                   digital_key_request.status,
+                   digital_key_request.created_at,
+                   room.name AS room_name,
+                   building.name AS building_name
+            FROM digital_key_request
+            JOIN digital_lock ON digital_key_request.digital_lock_id = digital_lock.id
+            JOIN room ON digital_lock.room_id = room.id
+            JOIN building ON room.building_id = building.id
+            WHERE digital_key_request.user_id = %s
+        """
+        params = [user_id]
         if status is not None:
             query += ' AND digital_key_request.status = %s'
             params.append(status)
