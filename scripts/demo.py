@@ -25,9 +25,9 @@ def initialize():
         "DB_PASSWORD": secrets.token_hex(24),
         "DEMO_DB_ROOT_PASSWORD": secrets.token_hex(24),
         "JWT_SECRET": secrets.token_hex(32),
-        "DEMO_PASSWORD": "Flike-" + secrets.token_hex(8),
+        "DEMO_PASSWORD": "senha",
         "DEMO_API_URL": "http://127.0.0.1:18000",
-        "CORS_ORIGINS": "http://127.0.0.1:3000,http://localhost:3000",
+        "CORS_ORIGINS": "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001",
     }
     with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
         stream.write("".join(f"{key}={value}\n" for key, value in values.items()))

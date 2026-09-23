@@ -43,7 +43,7 @@ Os dados ficam versionados em `data/demo_seed.json`; o carregador é `scripts/se
 
 O script exige `DEMO_PASSWORD`, valida referências antes de abrir o banco, aplica as mudanças em uma transação e mantém a tabela técnica `demo_seed_record` para reconhecer somente os registros do cenário em execuções futuras. As datas relativas são atualizadas a cada execução, mantendo autorizações ativas, expiradas e recentes. As chaves de tranca desse cenário são determinísticas e destinam-se exclusivamente a desenvolvimento/demonstração.
 
-Entre as contas fictícias estão `responsavel@example.com`, `visitante@example.com` e `outro@example.com`; o comando abaixo lista todas. A senha local aparece em `.demo/ACESSO.md` ou com:
+Entre as contas fictícias estão `responsavel@example.com`, `visitante@example.com` e `outro@example.com`; o comando abaixo lista todas. Todas usam a senha `senha`, também registrada em `.demo/ACESSO.md`:
 
 ```bash
 ./scripts/demo.sh credentials
