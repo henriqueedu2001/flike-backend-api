@@ -22,19 +22,28 @@ Na primeira preparação, dependências e a imagem MySQL precisam de internet. A
 Terminal 1:
 
 ```bash
+./scripts/demo.sh seed
 ./scripts/demo.sh api
 ```
 
 Terminal 2:
 
 ```bash
-./scripts/demo.sh seed
 ./scripts/demo.sh web
 ```
 
-Abra **http://127.0.0.1:3000**. A API fica em **http://127.0.0.1:18000**. O seed é idempotente e prepara duas instituições, cada uma com edifício, sala e uma tranca. Ele não gera pedidos ou aprovações automaticamente.
+Abra **http://127.0.0.1:3000**. A API fica em **http://127.0.0.1:18000**. O seed não depende da API e pode ser repetido: ele restaura, sem duplicar, um cenário com 10 usuários, 4 instituições (universidade, centro empresarial, hospital e hub criativo), 8 prédios, 18 salas/trancas, solicitações pendentes/aprovadas/rejeitadas, chaves válidas e expiradas e eventos de acesso.
 
-As contas fictícias são `responsavel@example.com`, `visitante@example.com` e `outro@example.com`. A senha local aparece em `.demo/ACESSO.md` ou com:
+Os dados ficam versionados em `data/demo_seed.json`; o carregador é `scripts/seed_db.py`. Para usar outro banco já configurado por variáveis de ambiente, crie primeiro o schema e execute diretamente:
+
+```bash
+.venv/bin/python -m scripts.create_db
+.venv/bin/python -m scripts.seed_db
+```
+
+O script exige `DEMO_PASSWORD`, valida referências antes de abrir o banco, aplica as mudanças em uma transação e mantém a tabela técnica `demo_seed_record` para reconhecer somente os registros do cenário em execuções futuras. As datas relativas são atualizadas a cada execução, mantendo autorizações ativas, expiradas e recentes. As chaves de tranca desse cenário são determinísticas e destinam-se exclusivamente a desenvolvimento/demonstração.
+
+Entre as contas fictícias estão `responsavel@example.com`, `visitante@example.com` e `outro@example.com`; o comando abaixo lista todas. A senha local aparece em `.demo/ACESSO.md` ou com:
 
 ```bash
 ./scripts/demo.sh credentials
@@ -46,12 +55,12 @@ Para encerrar API e site, use Ctrl+C em seus terminais. `./scripts/demo.sh stop`
 
 1. Abra dois perfis/janelas privadas do navegador: responsável e solicitante. Também é possível cadastrar uma conta nova na tela **Criar Conta**.
 2. Com `responsavel@example.com`, entre em **Estrutura institucional** e mostre instituição → edifício → sala → tranca. Cadastros, edições e exclusões de recursos vazios são permitidos; exclusões com vínculos são recusadas.
-3. Com o visitante, abra **Solicitar acesso**, escolha **FLIKE — Demonstração**, seu edifício e **Sala de apoio**, e envie. O painel mostra **Pendente**.
+3. Com o visitante, abra **Solicitar acesso**, escolha **Universidade Federal do Norte**, **Instituto de Tecnologia** e **Makerspace**, e envie. O painel mostra **Pendente**.
 4. Com o responsável, abra **Solicitações recebidas** e aprove o pedido. A validade padrão é de 24 horas; a tela também permite informar minutos.
 5. Atualize o painel do visitante: o pedido fica **Aprovada** e a chave pode ser aberta em **Ver QR Code**. Recarregue a página ou saia/entre novamente para demonstrar a recuperação da mesma chave.
 6. Envie outro pedido e rejeite-o como responsável. O visitante verá **Rejeitada**, sem uma nova chave.
 7. Abra **Autorizações emitidas** e o histórico do solicitante. Os registros representam emissão, destino e validade — não passagem pela porta.
-8. Entre como `outro@example.com`: essa conta administra apenas a instituição independente. A API também bloqueia tentativas de consultar/modificar recursos protegidos de terceiros.
+8. Entre como `outro@example.com`: essa conta administra apenas o **Centro Empresarial Ver-o-Peso**. A API também bloqueia tentativas de consultar/modificar recursos protegidos de terceiros.
 
 A demo utiliza **uma tranca por sala**: seleção explícita entre múltiplas trancas (RF-04) continua fora do escopo aprovado. Chaves são reutilizáveis até expirar, não consumidas por uma flag de uso. Sem aplicativo móvel, recuperação de senha, revogação imediata, gestão visual de segredo ou monitoramento de ocupação.
 

@@ -1,15 +1,17 @@
 """Prepare a separate local demo without reading or replacing the real .env."""
+import json
 import os
 from pathlib import Path
 import secrets
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-ACCOUNTS = (
-    ("Responsável FLIKE", "responsavel@example.com"),
-    ("Visitante FLIKE", "visitante@example.com"),
-    ("Responsável de outra instituição", "outro@example.com"),
-)
+SEED_FILE = ROOT / "data" / "demo_seed.json"
+
+
+def accounts():
+    with SEED_FILE.open(encoding="utf-8") as stream:
+        return [(row["name"], row["email"]) for row in json.load(stream)["users"]]
 
 
 def initialize():
@@ -33,58 +35,26 @@ def initialize():
 
 
 def seed():
-    import httpx
     if os.environ.get("DB_DATABASE") != "flike_demo":
         raise SystemExit("Seed permitido apenas no banco isolado flike_demo.")
-    if os.environ.get("DEMO_API_URL") not in ("http://127.0.0.1:18000", "http://localhost:18000"):
-        raise SystemExit("Seed permitido apenas na API local de demonstração, porta 18000.")
+    from scripts.seed_db import format_summary, load_seed_data, seed_dataset
+
     password = os.environ["DEMO_PASSWORD"]
-    with httpx.Client(base_url=os.environ["DEMO_API_URL"], timeout=20) as client:
-        tokens = {}
-        for name, email in ACCOUNTS:
-            response = client.post("/user/new", json={"name": name, "email": email, "password": password})
-            if response.status_code not in (200, 201, 409):
-                response.raise_for_status()
-            response = client.post("/auth/user", json={"email": email, "password": password})
-            response.raise_for_status()
-            tokens[email] = {"Authorization": "Bearer " + response.json()["token"]}
-        for email, name in ((ACCOUNTS[0][1], "FLIKE — Demonstração"), (ACCOUNTS[2][1], "Instituição independente")):
-            headers = tokens[email]
-            def call(method, path, **kwargs):
-                response = client.request(method, path, headers=headers, **kwargs)
-                response.raise_for_status()
-                return response.json()
-            institutions = call("GET", "/admin/institutions")
-            institution = next((row for row in institutions if row["name"] == name), None)
-            institution_id = institution["id"] if institution else call("POST", "/admin/institutions", json={"name": name})["institution_id"]
-            buildings = call("GET", "/admin/buildings")
-            building = next((row for row in buildings if row["institution_id"] == institution_id and row["name"] == "Edifício de demonstração"), None)
-            building_id = building["id"] if building else call("POST", "/admin/buildings", json={
-                "institution_id": institution_id, "name": "Edifício de demonstração",
-                "address_line_1": "Endereço demonstrativo", "address_line_2": "",
-                "city": "São Paulo", "state": "SP", "zip_code": "01000-000", "country": "Brasil",
-            })["building_id"]
-            rooms = call("GET", "/admin/rooms")
-            room = next((row for row in rooms if row["building_id"] == building_id and row["number"] == "101"), None)
-            room_id = room["id"] if room else call("POST", "/admin/rooms", json={
-                "building_id": building_id, "name": "Sala de apoio", "number": "101",
-            })["room_id"]
-            locks = call("GET", "/admin/locks")
-            if not any(row["room_id"] == room_id for row in locks):
-                call("POST", "/admin/locks", json={"room_id": room_id})
-    print("Contas e duas instituições prontas; uma tranca por sala. Seed pode ser repetido.")
+    data = load_seed_data(SEED_FILE)
+    result = seed_dataset(SEED_FILE)
+    print(format_summary(data, result))
     access = ROOT / ".demo" / "ACESSO.md"
     access.parent.mkdir(exist_ok=True)
     with os.fdopen(os.open(access, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as stream:
         stream.write("# Acesso à demonstração local\n\nSite: http://127.0.0.1:3000\n\n")
-        stream.write("\n".join(f"- {name}: `{email}`" for name, email in ACCOUNTS))
-        stream.write(f"\n\nSenha das três contas fictícias: `{password}`\n")
+        stream.write("\n".join(f"- {name}: `{email}`" for name, email in accounts()))
+        stream.write(f"\n\nSenha comum das contas fictícias: `{password}`\n")
     print("Consulte ./scripts/demo.sh credentials para os logins locais.")
 
 
 def credentials():
     print("Contas fictícias para esta demonstração local:")
-    for name, email in ACCOUNTS:
+    for name, email in accounts():
         print(f"  {name}: {email}")
     print("Senha comum:", os.environ["DEMO_PASSWORD"])
 
