@@ -9,7 +9,6 @@ from app.schemas.digital_key_models import *
 from app.api.routes.auth import verify_token
 from app.api.routes.digital_lock import _serialize_digital_lock
 from app.modules.auth.jwt_token import get_user_id_from_token
-from datetime import datetime, timedelta
 from http import HTTPStatus
 
 router = APIRouter(prefix='/admin', dependencies=[Depends(verify_token)])
@@ -39,8 +38,8 @@ def create_institution(
     try:
         institution_id, created_at = repo.create_institution(user_id, institution_data.name)
         return CreateInstitutionResponse(institution_id=institution_id, created_at=created_at)
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
+    except Exception:
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail='Não foi possível concluir a operação.') from None
 
 
 @router.put('/institutions/{id}')
@@ -130,8 +129,8 @@ def create_building(
             country=building_data.country,
         )
         return CreateBuildingResponse(building_id=building_id, created_at=created_at)
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
+    except Exception:
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail='Não foi possível concluir a operação.') from None
 
 
 @router.put('/buildings/{id}')
@@ -240,8 +239,8 @@ def create_room(
             number=room_data.number
         )
         return CreateRoomResponse(room_id=room_id, created_at=created_at)
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
+    except Exception:
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail='Não foi possível concluir a operação.') from None
 
 
 @router.put('/rooms/{id}')
@@ -379,8 +378,8 @@ def create_lock(
     try:
         digital_lock_id, created_at = repo.create_digital_lock(room_id=lock_data.room_id)
         return CreateDigitalLockResponse(digital_lock_id=digital_lock_id, created_at=created_at)
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
+    except Exception:
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail='Não foi possível concluir a operação.') from None
 
 
 @router.put('/locks/{id}')
@@ -444,54 +443,33 @@ def delete_lock(
     return {"message": "digital lock deleted successfully"}
 
 
-# ---- Digital Key issuance ----
-
-DEFAULT_KEY_VALIDITY = timedelta(hours=24)
-
-
-@router.post('/keys/issue')
-def issue_digital_key(
-    key_data: IssueDigitalKeyRequest,
-    token: Annotated[str, Depends(verify_token)],
-    db: Database = Depends(get_database)
-) -> IssueDigitalKeyResponse:
-    repo = DigitalKeyRepository(db)
-    lock_repo = DigitalLockRepository(db)
-    user_id = get_user_id_from_token(token)
-    expires_at = key_data.expires_at or (datetime.now() + DEFAULT_KEY_VALIDITY)
-
-    try:
-        owner_id = lock_repo.get_institution_owner(key_data.lock_id)
-    except DigitalLockNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-
-    if owner_id != user_id:
-        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can issue keys for this lock')
-
-    try:
-        digital_key_id, created_at = repo.create_digital_key(
-            user_id=key_data.user_id,
-            digital_lock_id=key_data.lock_id,
-            expiration=expires_at
-        )
-        return IssueDigitalKeyResponse(digital_key_id=digital_key_id, created_at=created_at)
-    except DigitalLockNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
-
-
 # ---- Digital Key requests ----
+
+@router.post('/keys/issue', deprecated=True)
+def retired_direct_issuance():
+    raise HTTPException(410, 'A emissão exige uma solicitação aprovada.')
+
 
 @router.get('/keys/requests')
 def get_key_requests(
     token: Annotated[str, Depends(verify_token)],
-    status: Optional[str] = None,
+    status: Optional[RequestStatus] = None,
     db: Database = Depends(get_database)
 ):
-    repo = DigitalKeyRequestRepository(db)
-    user_id = get_user_id_from_token(token)
-    return repo.get_requests_by_owner(user_id, status)
+    return DigitalKeyRequestRepository(db).get_requests_by_owner(get_user_id_from_token(token), status)
+
+
+def _decide_request(repo, request_id, owner_id, status, expiration=None):
+    try:
+        return repo.decide(request_id, owner_id, status, expiration)
+    except (DigitalKeyRequestNotFound, DigitalLockNotFound) as error:
+        raise HTTPException(404, str(error)) from None
+    except PermissionDenied as error:
+        raise HTTPException(403, str(error)) from None
+    except RequestAlreadyDecided as error:
+        raise HTTPException(409, str(error)) from None
+    except InvalidExpiration as error:
+        raise HTTPException(422, str(error)) from None
 
 
 @router.post('/keys/requests/{id}/approve')
@@ -501,44 +479,11 @@ def approve_key_request(
     approve_data: Optional[ApproveDigitalKeyRequestRequest] = None,
     db: Database = Depends(get_database)
 ) -> ApproveDigitalKeyRequestResponse:
-    request_repo = DigitalKeyRequestRepository(db)
-    key_repo = DigitalKeyRepository(db)
-    lock_repo = DigitalLockRepository(db)
-    user_id = get_user_id_from_token(token)
-
-    try:
-        request = request_repo.get_request(id)
-    except DigitalKeyRequestNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-
-    try:
-        owner_id = lock_repo.get_institution_owner(request['digital_lock_id'])
-    except DigitalLockNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-
-    if owner_id != user_id:
-        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can approve this request')
-
-    if request.get('status') != 'pending':
-        raise HTTPException(
-            status_code=HTTPStatus.CONFLICT,
-            detail=f"request already {request.get('status')}"
-        )
-
-    expires_at = (approve_data.expires_at if approve_data else None) or (datetime.now() + DEFAULT_KEY_VALIDITY)
-
-    try:
-        digital_key_id, created_at = key_repo.create_digital_key(
-            user_id=request['user_id'],
-            digital_lock_id=request['digital_lock_id'],
-            expiration=expires_at
-        )
-    except DigitalLockNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-
-    request_repo.update_status(id, 'approved')
-
-    return ApproveDigitalKeyRequestResponse(request_id=id, digital_key_id=digital_key_id, created_at=created_at)
+    key_id, created_at = _decide_request(
+        DigitalKeyRequestRepository(db), id, get_user_id_from_token(token), 'approved',
+        approve_data.expires_at if approve_data else None,
+    )
+    return ApproveDigitalKeyRequestResponse(request_id=id, digital_key_id=key_id, created_at=created_at)
 
 
 @router.post('/keys/requests/{id}/reject')
@@ -547,28 +492,5 @@ def reject_key_request(
     token: Annotated[str, Depends(verify_token)],
     db: Database = Depends(get_database)
 ):
-    repo = DigitalKeyRequestRepository(db)
-    lock_repo = DigitalLockRepository(db)
-    user_id = get_user_id_from_token(token)
-
-    try:
-        request = repo.get_request(id)
-    except DigitalKeyRequestNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-
-    try:
-        owner_id = lock_repo.get_institution_owner(request['digital_lock_id'])
-    except DigitalLockNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-
-    if owner_id != user_id:
-        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='only the institution owner can reject this request')
-
-    if request.get('status') != 'pending':
-        raise HTTPException(
-            status_code=HTTPStatus.CONFLICT,
-            detail=f"request already {request.get('status')}"
-        )
-
-    repo.update_status(id, 'rejected')
-    return {"message": "request rejected"}
+    _decide_request(DigitalKeyRequestRepository(db), id, get_user_id_from_token(token), 'rejected')
+    return {"message": "Solicitação rejeitada."}

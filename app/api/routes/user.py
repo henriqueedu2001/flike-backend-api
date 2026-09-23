@@ -23,22 +23,18 @@ def create_user(user_data: CreateUserRequest, db: Database = Depends(get_databas
 
 
 @router.get('/user/all')
-def get_all_users(db: Database = Depends(get_database)):
-    repo = UserRepository(db)
-    users = repo.get_all_users()
-    return users
+def get_all_users(token: Annotated[str, Depends(verify_token)], db: Database = Depends(get_database)):
+    return [UserRepository(db).get_user(get_user_id_from_token(token))]
 
 
 @router.get('/user')
-def get_user(id: int, db: Database = Depends(get_database)):
-    repo = UserRepository(db)
-
+def get_user(id: int, token: Annotated[str, Depends(verify_token)], db: Database = Depends(get_database)):
+    if id != get_user_id_from_token(token):
+        raise HTTPException(403, 'Você só pode consultar seu próprio perfil.')
     try:
-        user = repo.get_user(id)
+        return UserRepository(db).get_user(id)
     except UserNotFound as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-
-    return user
+        raise HTTPException(404, str(error)) from None
 
 
 @router.get('/user/me')

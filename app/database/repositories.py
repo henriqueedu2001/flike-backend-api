@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import *
 from mysql.connector.errors import IntegrityError
 from app.database.database_manager import Database
 from app.modules.auth.hashes import secure_hash
 from app.modules.auth.salt_gen import generate_salt
-from app.modules.cmac.key import *
+from app.modules.cmac.key import DigitalKey, Key
+from app.services.time import utc_now, as_utc, database_time
 
 class UserNotFound(Exception):
     pass
@@ -49,50 +50,30 @@ class DigitalKeyRequestNotFound(Exception):
     pass
 
 
-class DigitalKeyAlreadyUsed(Exception):
-    pass
-
-
-class InvalidDigitalKeySignature(Exception):
-    pass
-
-
 class UserRepository:
     def __init__(self, db: Database):
         self.db = db 
 
     
     def create_user(self, name: str, email: str, password: str):
-        # check if the email is new or already in use
-        query = f'SELECT email FROM user WHERE email = %s;'
-        self.db.execute(query, (email,))
-        fetched_email = self.db.fetch_all()
+        email = email.strip().lower()
+        try:
+            self.db.execute('INSERT INTO user(name, email) VALUES(%s, %s)', (name, email))
+            user_id = self.db.cursor.lastrowid
+            salt = generate_salt()
+            self.db.execute(
+                'INSERT INTO auth(salt, hashed_email, hashed_password) VALUES(%s, %s, %s)',
+                (salt, secure_hash(email), secure_hash(salt + password)),
+            )
+            self.db.commit()
+            return user_id
+        except IntegrityError as error:
+            self.db.rollback()
+            if error.errno == 1062:
+                raise EmailAlreadyInUse('Este e-mail já está cadastrado.') from None
+            raise
 
-        if fetched_email:
-            raise EmailAlreadyInUse(f'email \"{fetched_email}\" already in use')
-        
-        # create user
-        query = 'INSERT INTO user(name, email) VALUES(%s, %s);'
-        self.db.execute(query, (name, email))
 
-        # create credentials
-        query = 'INSERT INTO auth(salt, hashed_email, hashed_password) VALUES(%s, %s, %s)'
-        salt = generate_salt()
-        hashed_email = secure_hash(email)
-        hashed_password = secure_hash(salt + password)
-        self.db.execute(query, (salt, hashed_email, hashed_password))
-
-        # retrieving the user id
-        query = 'SELECT id FROM user WHERE email = %s'
-        self.db.execute(query, (email, ))
-        user_id = self.db.fetch_one().get('id')
-
-        # committing the transaction
-        self.db.commit()
-
-        return user_id
-
-    
     def get_all_users(self):
         query = 'SELECT * FROM user;'
         self.db.execute(query)
@@ -101,8 +82,8 @@ class UserRepository:
     
 
     def get_user(self, user_id: int):
-        query = f'SELECT * FROM user WHERE id = {user_id};'
-        self.db.execute(query)
+        query = 'SELECT * FROM user WHERE id = %s;'
+        self.db.execute(query, (user_id,))
         user = self.db.fetch_one()
 
         if not user:
@@ -121,8 +102,12 @@ class UserRepository:
     
 
     def authenticate_user(self, email: str, password: str):
-        # get the credentials and the salt from the email
-        hashed_email = secure_hash(email)
+        # Preserve login for legacy accounts whose stored e-mail used mixed case.
+        try:
+            stored_email = self.get_user_from_email(email)['email']
+        except UserNotFound:
+            raise CredentialsDontExist() from None
+        hashed_email = secure_hash(stored_email)
         query = 'SELECT * FROM auth WHERE hashed_email = %s'
         self.db.execute(query, (hashed_email, ))
         credentials = self.db.fetch_one()
@@ -143,24 +128,21 @@ class UserRepository:
 
     def update_user(self, user_id: int, name: str, email: str):
         current_user = self.get_user(user_id)
-        old_email = current_user.get('email')
-
-        if email != old_email:
-            query = 'SELECT email FROM user WHERE email = %s AND id != %s;'
-            self.db.execute(query, (email, user_id))
-            if self.db.fetch_all():
-                raise EmailAlreadyInUse(f'email \"{email}\" already in use')
-
-        query = 'UPDATE user SET name = %s, email = %s WHERE id = %s'
-        self.db.execute(query, (name, email, user_id))
-
-        if email != old_email:
-            old_hashed_email = secure_hash(old_email)
-            new_hashed_email = secure_hash(email)
-            update_auth_query = 'UPDATE auth SET hashed_email = %s WHERE hashed_email = %s'
-            self.db.execute(update_auth_query, (new_hashed_email, old_hashed_email))
-
-        self.db.commit()
+        old_email = current_user['email']
+        email = email.strip().lower()
+        try:
+            self.db.execute('UPDATE user SET name = %s, email = %s WHERE id = %s', (name, email, user_id))
+            if email != old_email:
+                self.db.execute(
+                    'UPDATE auth SET hashed_email = %s WHERE hashed_email = %s',
+                    (secure_hash(email), secure_hash(old_email)),
+                )
+            self.db.commit()
+        except IntegrityError as error:
+            self.db.rollback()
+            if error.errno == 1062:
+                raise EmailAlreadyInUse('Este e-mail já está cadastrado.') from None
+            raise
         return self.get_user(user_id)
 
 
@@ -257,8 +239,8 @@ class InstitutionRepository:
         
         # recovering the timestamp
         select_query = 'SELECT created_at FROM institution WHERE id = %s'
-        self.db.cursor.execute(select_query, (institution_id,))
-        row = self.db.cursor.fetchone()
+        self.db.execute(select_query, (institution_id,))
+        row = self.db.fetch_one()
 
         created_at = row.get('created_at')
 
@@ -408,8 +390,8 @@ class BuildingRepository:
         
         # recovering the timestamp
         select_query = 'SELECT created_at FROM building WHERE id = %s'
-        self.db.cursor.execute(select_query, (building_id,))
-        row = self.db.cursor.fetchone()
+        self.db.execute(select_query, (building_id,))
+        row = self.db.fetch_one()
 
         created_at = row.get('created_at')
 
@@ -515,8 +497,8 @@ class RoomRepository:
         
         # recovering the timestamp
         select_query = 'SELECT created_at FROM room WHERE id = %s'
-        self.db.cursor.execute(select_query, (room_id,))
-        row = self.db.cursor.fetchone()
+        self.db.execute(select_query, (room_id,))
+        row = self.db.fetch_one()
 
         created_at = row.get('created_at')
 
@@ -618,8 +600,8 @@ class DigitalLockRepository:
         
         # recovering the timestamp
         select_query = 'SELECT created_at FROM digital_lock WHERE id = %s'
-        self.db.cursor.execute(select_query, (digital_lock_id,))
-        row = self.db.cursor.fetchone()
+        self.db.execute(select_query, (digital_lock_id,))
+        row = self.db.fetch_one()
 
         created_at = row.get('created_at')
 
@@ -627,257 +609,191 @@ class DigitalLockRepository:
         return digital_lock_id, created_at
 
 
+class PermissionDenied(Exception):
+    pass
+
+
+class RequestAlreadyDecided(Exception):
+    pass
+
+
+class InvalidExpiration(Exception):
+    pass
+
+
 class DigitalKeyRepository:
+    # Public projection intentionally excludes legacy consumption fields and secrets.
+    SELECT_KEYS = """
+        SELECT k.id, k.request_id, k.user_id, k.digital_lock_id, k.payload,
+               k.created_at, k.created_at AS issued_at, k.expires_at,
+               r.id AS room_id, r.name AS room_name,
+               b.id AS building_id, b.name AS building_name,
+               i.id AS institution_id, i.name AS institution_name
+        FROM digital_key k
+        JOIN digital_lock l ON k.digital_lock_id = l.id
+        JOIN room r ON l.room_id = r.id
+        JOIN building b ON r.building_id = b.id
+        JOIN institution i ON b.institution_id = i.id
+    """
+
     def __init__(self, db: Database):
         self.db = db
-    
-
-    def get_all_digital_keys(self):
-        query = 'SELECT * FROM digital_key;'
-        self.db.execute(query)
-        digital_keys = self.db.fetch_all()
-        return digital_keys
-
-
-    def get_key_holders_by_room(self, room_id: int):
-        query = """
-            SELECT user.id AS user_id, user.name, user.email,
-                   MAX(digital_key.used) AS used,
-                   MAX(digital_key.used_at) AS used_at
-            FROM digital_key
-            JOIN digital_lock ON digital_key.digital_lock_id = digital_lock.id
-            JOIN user ON digital_key.user_id = user.id
-            WHERE digital_lock.room_id = %s
-            GROUP BY user.id, user.name, user.email;
-        """
-        self.db.execute(query, (room_id,))
-        return self.db.fetch_all()
-
-
-    def get_key_holders_by_owner(self, owner_id: int):
-        query = """
-            SELECT user.id AS user_id, user.name, user.email,
-                   MAX(digital_key.used) AS used,
-                   MAX(digital_key.used_at) AS used_at
-            FROM digital_key
-            JOIN digital_lock ON digital_key.digital_lock_id = digital_lock.id
-            JOIN room ON digital_lock.room_id = room.id
-            JOIN building ON room.building_id = building.id
-            JOIN institution ON building.institution_id = institution.id
-            JOIN user ON digital_key.user_id = user.id
-            WHERE institution.owner_id = %s
-            GROUP BY user.id, user.name, user.email;
-        """
-        self.db.execute(query, (owner_id,))
-        return self.db.fetch_all()
-
-
-    def get_key_usage_history(self, owner_id: int, user_id: int):
-        query = """
-            SELECT digital_key.id AS key_id,
-                   digital_key.used,
-                   digital_key.used_at,
-                   digital_key.expires_at,
-                   digital_key.created_at,
-                   room.id AS room_id,
-                   room.name AS room_name,
-                   building.id AS building_id,
-                   building.name AS building_name
-            FROM digital_key
-            JOIN digital_lock ON digital_key.digital_lock_id = digital_lock.id
-            JOIN room ON digital_lock.room_id = room.id
-            JOIN building ON room.building_id = building.id
-            JOIN institution ON building.institution_id = institution.id
-            WHERE institution.owner_id = %s AND digital_key.user_id = %s
-            ORDER BY digital_key.created_at DESC;
-        """
-        self.db.execute(query, (owner_id, user_id))
-        return self.db.fetch_all()
-
 
     def get_digital_key(self, digital_key_id: int):
-        query = 'SELECT * FROM digital_key WHERE id = %s;'
-        self.db.execute(query, (digital_key_id,))
-        digital_key = self.db.fetch_one()
-
-        if not digital_key:
-            raise DigitalKeyNotFound(f'digital_key with id = {digital_key_id} not found in the database')
-        return digital_key
-
-
-    def get_digital_key_by_payload(self, payload: bytes):
-        query = 'SELECT * FROM digital_key WHERE payload = %s;'
-        self.db.execute(query, (payload,))
-        digital_key = self.db.fetch_one()
-
-        if not digital_key:
-            raise DigitalKeyNotFound('digital_key with the given payload not found in the database')
-        return digital_key
-
-
-    def use_digital_key(self, payload: bytes):
-        digital_key = self.get_digital_key_by_payload(payload)
-
-        if digital_key['used']:
-            raise DigitalKeyAlreadyUsed(f"digital_key with id = {digital_key['id']} has already been used")
-
-        lock_query = 'SELECT secret_key FROM digital_lock WHERE id = %s;'
-        self.db.execute(lock_query, (digital_key['digital_lock_id'],))
-        lock_row = self.db.fetch_one()
-
-        if not lock_row:
-            raise DigitalLockNotFound(f"digital_lock with id = {digital_key['digital_lock_id']} not found in the database")
-
-        secret_key = lock_row.get('secret_key')
-        if not AES_CMAC.validate_signature(payload, Key(secret_key)):
-            raise InvalidDigitalKeySignature('digital_key signature is invalid')
-
-        used_at = datetime.now()
-        update_query = 'UPDATE digital_key SET used = TRUE, used_at = %s WHERE id = %s;'
-        self.db.execute(update_query, (used_at, digital_key['id']))
-        self.db.commit()
-        return digital_key['id'], used_at
-
+        self.db.execute(self.SELECT_KEYS + ' WHERE k.id = %s', (digital_key_id,))
+        key = self.db.fetch_one()
+        if key is None:
+            raise DigitalKeyNotFound('Chave digital não encontrada.')
+        return key
 
     def get_digital_keys_by_user(self, user_id: int):
-        query = 'SELECT * FROM digital_key WHERE user_id = %s;'
-        self.db.execute(query, (user_id,))
+        self.db.execute(self.SELECT_KEYS + ' WHERE k.user_id = %s ORDER BY k.created_at DESC, k.id DESC', (user_id,))
         return self.db.fetch_all()
 
+    def get_key_holders_by_room(self, room_id: int):
+        self.db.execute("""
+            SELECT u.id AS user_id, u.name, u.email, COUNT(*) AS key_count,
+                   SUM(k.created_at <= UTC_TIMESTAMP() AND k.expires_at > UTC_TIMESTAMP()) AS active_key_count,
+                   MAX(k.created_at) AS last_issued_at
+            FROM digital_key k
+            JOIN digital_lock l ON k.digital_lock_id = l.id
+            JOIN user u ON k.user_id = u.id
+            WHERE l.room_id = %s
+            GROUP BY u.id, u.name, u.email ORDER BY u.name, u.id
+        """, (room_id,))
+        return self.db.fetch_all()
 
-    def create_digital_key(self, user_id: int, digital_lock_id: int, expiration: datetime):
-        query = 'SELECT secret_key from digital_lock WHERE id = %s'
-        self.db.execute(query, (digital_lock_id, ))
-        row = self.db.cursor.fetchone()
+    def get_key_holders_by_owner(self, owner_id: int):
+        self.db.execute("""
+            SELECT u.id AS user_id, u.name, u.email, COUNT(*) AS key_count,
+                   SUM(k.created_at <= UTC_TIMESTAMP() AND k.expires_at > UTC_TIMESTAMP()) AS active_key_count,
+                   MAX(k.created_at) AS last_issued_at
+            FROM digital_key k
+            JOIN digital_lock l ON k.digital_lock_id = l.id
+            JOIN room r ON l.room_id = r.id
+            JOIN building b ON r.building_id = b.id
+            JOIN institution i ON b.institution_id = i.id
+            JOIN user u ON k.user_id = u.id
+            WHERE i.owner_id = %s
+            GROUP BY u.id, u.name, u.email ORDER BY u.name, u.id
+        """, (owner_id,))
+        return self.db.fetch_all()
 
-        if not row:
-            raise DigitalLockNotFound(f'digital_lock with id = {digital_lock_id} not found in the database')
-        secret_key = row.get('secret_key')
+    def get_key_usage_history(self, owner_id: int, user_id: int):
+        # This is issuance history, not evidence of a physical door event.
+        self.db.execute("""
+            SELECT k.id AS key_id, k.request_id, k.user_id, k.digital_lock_id,
+                   k.created_at, k.created_at AS issued_at, k.expires_at,
+                   r.id AS room_id, r.name AS room_name,
+                   b.id AS building_id, b.name AS building_name,
+                   i.id AS institution_id, i.name AS institution_name
+            FROM digital_key k
+            JOIN digital_lock l ON k.digital_lock_id = l.id
+            JOIN room r ON l.room_id = r.id
+            JOIN building b ON r.building_id = b.id
+            JOIN institution i ON b.institution_id = i.id
+            WHERE i.owner_id = %s AND k.user_id = %s
+            ORDER BY k.created_at DESC, k.id DESC
+        """, (owner_id, user_id))
+        return self.db.fetch_all()
 
-        digital_key = DigitalKey(
-            user_id=user_id,
-            digital_lock_id=digital_lock_id,
-            timestamp=datetime.now(),
-            expiration=expiration,
-            private_key=Key(secret_key)
-        )
-
-        payload = digital_key.payload
-
-        query = 'INSERT INTO digital_key(user_id, digital_lock_id, payload, expires_at) VALUES(%s, %s, %s, %s)'
-        self.db.execute(query, (user_id, digital_lock_id, payload, expiration))
-
-        # retrieving the digital_lock_id
-        digital_key_id = self.db.cursor.lastrowid
-
-        # recovering the timestamp
-        select_query = 'SELECT created_at FROM digital_key WHERE id = %s'
-        self.db.cursor.execute(select_query, (digital_key_id,))
-        row = self.db.cursor.fetchone()
-
-        created_at = row.get('created_at')
-
-        self.db.commit()
-        return digital_key_id, created_at
+    def create_digital_key(self, user_id: int, digital_lock_id: int, expiration: datetime,
+                           *, request_id: int, issued_at: datetime):
+        """Insert inside the caller's decision transaction; never commit here."""
+        expiration = as_utc(expiration).replace(microsecond=0)
+        issued_at = as_utc(issued_at).replace(microsecond=0)
+        if expiration <= issued_at:
+            raise InvalidExpiration('A expiração deve ser posterior à emissão.')
+        self.db.execute('SELECT secret_key FROM digital_lock WHERE id = %s FOR SHARE', (digital_lock_id,))
+        lock = self.db.fetch_one()
+        if lock is None:
+            raise DigitalLockNotFound('Tranca não encontrada.')
+        key = DigitalKey(user_id, digital_lock_id, issued_at, expiration, Key(bytes(lock['secret_key'])))
+        self.db.execute("""
+            INSERT INTO digital_key(request_id, user_id, digital_lock_id, payload, created_at, expires_at)
+            VALUES(%s, %s, %s, %s, %s, %s)
+        """, (request_id, user_id, digital_lock_id, key.payload,
+              database_time(issued_at), database_time(expiration)))
+        return self.db.cursor.lastrowid, issued_at
 
 
 class DigitalKeyRequestRepository:
+    SELECT_REQUESTS = """
+        SELECT q.id, q.user_id, q.digital_lock_id, q.status, q.created_at, q.decided_at,
+               k.id AS digital_key_id,
+               u.name AS user_name, u.email AS user_email,
+               r.name AS room_name, b.name AS building_name, i.name AS institution_name
+        FROM digital_key_request q
+        JOIN user u ON q.user_id = u.id
+        JOIN digital_lock l ON q.digital_lock_id = l.id
+        JOIN room r ON l.room_id = r.id
+        JOIN building b ON r.building_id = b.id
+        JOIN institution i ON b.institution_id = i.id
+        LEFT JOIN digital_key k ON k.request_id = q.id
+    """
+
     def __init__(self, db: Database):
         self.db = db
 
-
     def create_request(self, user_id: int, digital_lock_id: int) -> Tuple[int, datetime]:
-        query = 'INSERT INTO digital_key_request(user_id, digital_lock_id) VALUES(%s, %s)'
-        self.db.execute(query, (user_id, digital_lock_id))
-
+        DigitalLockRepository(self.db).get_digital_lock(digital_lock_id)
+        created_at = utc_now()
+        self.db.execute(
+            'INSERT INTO digital_key_request(user_id, digital_lock_id, created_at) VALUES(%s, %s, %s)',
+            (user_id, digital_lock_id, database_time(created_at)),
+        )
         request_id = self.db.cursor.lastrowid
-
-        select_query = 'SELECT created_at FROM digital_key_request WHERE id = %s'
-        self.db.cursor.execute(select_query, (request_id,))
-        row = self.db.cursor.fetchone()
-
-        created_at = row.get('created_at')
-
         self.db.commit()
         return request_id, created_at
 
-
-    def get_all_requests(self, status: Optional[str] = None):
+    def _list(self, condition, identity, status):
+        query = self.SELECT_REQUESTS + ' WHERE ' + condition
+        params = [identity]
         if status is not None:
-            query = 'SELECT * FROM digital_key_request WHERE status = %s;'
-            self.db.execute(query, (status,))
-        else:
-            query = 'SELECT * FROM digital_key_request;'
-            self.db.execute(query)
+            query += ' AND q.status = %s'
+            params.append(status)
+        query += ' ORDER BY q.created_at DESC, q.id DESC'
+        self.db.execute(query, tuple(params))
         return self.db.fetch_all()
-
 
     def get_requests_by_owner(self, owner_id: int, status: Optional[str] = None):
-        query = """
-            SELECT digital_key_request.id,
-                   digital_key_request.user_id,
-                   digital_key_request.digital_lock_id,
-                   digital_key_request.status,
-                   digital_key_request.created_at,
-                   user.name AS user_name,
-                   user.email AS user_email,
-                   room.name AS room_name,
-                   building.name AS building_name
-            FROM digital_key_request
-            JOIN user ON digital_key_request.user_id = user.id
-            JOIN digital_lock ON digital_key_request.digital_lock_id = digital_lock.id
-            JOIN room ON digital_lock.room_id = room.id
-            JOIN building ON room.building_id = building.id
-            JOIN institution ON building.institution_id = institution.id
-            WHERE institution.owner_id = %s
-        """
-        params = [owner_id]
-        if status is not None:
-            query += ' AND digital_key_request.status = %s'
-            params.append(status)
-        query += ';'
-        self.db.execute(query, tuple(params))
-        return self.db.fetch_all()
-
+        return self._list('i.owner_id = %s', owner_id, status)
 
     def get_requests_by_user(self, user_id: int, status: Optional[str] = None):
-        query = """
-            SELECT digital_key_request.id,
-                   digital_key_request.user_id,
-                   digital_key_request.digital_lock_id,
-                   digital_key_request.status,
-                   digital_key_request.created_at,
-                   room.name AS room_name,
-                   building.name AS building_name
-            FROM digital_key_request
-            JOIN digital_lock ON digital_key_request.digital_lock_id = digital_lock.id
-            JOIN room ON digital_lock.room_id = room.id
-            JOIN building ON room.building_id = building.id
-            WHERE digital_key_request.user_id = %s
-        """
-        params = [user_id]
-        if status is not None:
-            query += ' AND digital_key_request.status = %s'
-            params.append(status)
-        query += ';'
-        self.db.execute(query, tuple(params))
-        return self.db.fetch_all()
+        return self._list('q.user_id = %s', user_id, status)
 
-
-    def get_request(self, request_id: int):
-        query = 'SELECT * FROM digital_key_request WHERE id = %s;'
-        self.db.execute(query, (request_id,))
+    def get_request(self, request_id: int, *, for_update=False):
+        self.db.execute('SELECT * FROM digital_key_request WHERE id = %s' + (' FOR UPDATE' if for_update else ''), (request_id,))
         request = self.db.fetch_one()
-
-        if not request:
-            raise DigitalKeyRequestNotFound(f'digital_key_request with id = {request_id} not found in the database')
+        if request is None:
+            raise DigitalKeyRequestNotFound('Solicitação não encontrada.')
         return request
 
-
-    def update_status(self, request_id: int, status: str):
-        self.get_request(request_id)
-
-        query = 'UPDATE digital_key_request SET status = %s WHERE id = %s'
-        self.db.execute(query, (status, request_id))
-        self.db.commit()
-        return self.get_request(request_id)
+    def decide(self, request_id: int, owner_id: int, status: str, expiration=None):
+        """Serialize decisions and commit the status and its unique key together."""
+        if status not in ('approved', 'rejected'):
+            raise ValueError('Invalid decision')
+        try:
+            request = self.get_request(request_id, for_update=True)
+            actual_owner = DigitalLockRepository(self.db).get_institution_owner(request['digital_lock_id'])
+            if actual_owner != owner_id:
+                raise PermissionDenied('Somente o responsável pela instituição pode decidir este pedido.')
+            if request['status'] != 'pending':
+                raise RequestAlreadyDecided('Esta solicitação já foi decidida.')
+            decided_at = utc_now()
+            key_id = None
+            if status == 'approved':
+                expiration = expiration or decided_at + timedelta(hours=24)
+                key_id, _ = DigitalKeyRepository(self.db).create_digital_key(
+                    request['user_id'], request['digital_lock_id'], expiration,
+                    request_id=request_id, issued_at=decided_at,
+                )
+            self.db.execute(
+                'UPDATE digital_key_request SET status = %s, decided_at = %s WHERE id = %s',
+                (status, database_time(decided_at), request_id),
+            )
+            self.db.commit()
+            return key_id, decided_at
+        except Exception:
+            self.db.rollback()
+            raise

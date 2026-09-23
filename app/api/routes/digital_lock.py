@@ -4,12 +4,13 @@ from app.database.repositories import *
 from app.schemas.digital_lock_models import *
 from app.modules.utils.binary_handler import BinaryHandler
 from http import HTTPStatus
+from app.api.routes.auth import verify_token
+from app.modules.auth.jwt_token import get_user_id_from_token
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_token)])
 
 def _serialize_digital_lock(lock: dict) -> dict:
-    lock['secret_key'] = bytes(lock['secret_key']).hex()
-    return lock
+    return {name: lock[name] for name in ('id', 'room_id', 'created_at')}
 
 
 @router.get('/digital_lock/all')
@@ -27,12 +28,14 @@ def get_digital_locks_by_room(room_id: int, db: Database = Depends(get_database)
 
 
 @router.post('/digital_lock/new')
-def create_digital_lock(digital_lock_data: CreateDigitalLockRequest, db: Database = Depends(get_database)) -> CreateDigitalLockResponse:
-    repo = DigitalLockRepository(db)
-
+def create_digital_lock(digital_lock_data: CreateDigitalLockRequest,
+                        token: Annotated[str, Depends(verify_token)],
+                        db: Database = Depends(get_database)) -> CreateDigitalLockResponse:
     try:
-        digital_lock_id, created_at = repo.create_digital_lock(room_id=digital_lock_data.room_id)
-        
-        return CreateDigitalLockResponse(digital_lock_id=digital_lock_id, created_at=created_at)
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
+        owner_id = RoomRepository(db).get_owner_id(digital_lock_data.room_id)
+    except RoomNotFound as error:
+        raise HTTPException(404, str(error)) from None
+    if owner_id != get_user_id_from_token(token):
+        raise HTTPException(403, 'Somente o responsável pela instituição pode cadastrar esta tranca.')
+    digital_lock_id, created_at = DigitalLockRepository(db).create_digital_lock(digital_lock_data.room_id)
+    return CreateDigitalLockResponse(digital_lock_id=digital_lock_id, created_at=created_at)

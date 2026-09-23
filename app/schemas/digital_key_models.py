@@ -1,20 +1,26 @@
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, PositiveInt, field_validator
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
+from app.services.time import as_utc, utc_now
 
-class CreateDigitalKeyRequest(BaseModel):
-    user_id: int
-    digital_lock_id: int
-    expiration: datetime
+RequestStatus = Literal['pending', 'approved', 'rejected']
 
 
-class CreateDigitalKeyResponse(BaseModel):
-    digital_key_id: int
-    created_at: datetime
+class ExpirationRequest(BaseModel):
+    expires_at: Optional[AwareDatetime] = None
+
+    @field_validator('expires_at')
+    @classmethod
+    def valid_expiration(cls, value):
+        if value is not None:
+            value = as_utc(value).replace(microsecond=0)
+            if value <= utc_now():
+                raise ValueError('A expiração deve ser posterior ao instante atual.')
+        return value
 
 
 class RequestDigitalKeyRequest(BaseModel):
-    lock_id: int
+    lock_id: PositiveInt
 
 
 class RequestDigitalKeyResponse(BaseModel):
@@ -22,31 +28,11 @@ class RequestDigitalKeyResponse(BaseModel):
     created_at: datetime
 
 
-class IssueDigitalKeyRequest(BaseModel):
-    user_id: int
-    lock_id: int
-    expires_at: Optional[datetime] = None
-
-
-class IssueDigitalKeyResponse(BaseModel):
-    digital_key_id: int
-    created_at: datetime
-
-
-class ApproveDigitalKeyRequestRequest(BaseModel):
-    expires_at: Optional[datetime] = None
+class ApproveDigitalKeyRequestRequest(ExpirationRequest):
+    pass
 
 
 class ApproveDigitalKeyRequestResponse(BaseModel):
     request_id: int
     digital_key_id: int
     created_at: datetime
-
-
-class UseDigitalKeyRequest(BaseModel):
-    payload: str
-
-
-class UseDigitalKeyResponse(BaseModel):
-    digital_key_id: int
-    used_at: datetime

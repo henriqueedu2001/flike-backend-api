@@ -18,7 +18,9 @@ def generate_jwt_token(user_id: int):
 
 def validate_jwt_token(token: str):
     try:
-        jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"], options={"require": ["exp", "user_id"]})
+        if type(payload["user_id"]) is not int or payload["user_id"] <= 0:
+            return False
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return False
     return True
@@ -26,7 +28,7 @@ def validate_jwt_token(token: str):
 
 def get_user_id_from_token(token: str):
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"], options={"require": ["exp", "user_id"]})
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
     return payload.get('user_id')

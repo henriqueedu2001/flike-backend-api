@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.schemas.auth_models import *
 from app.database.database_manager import *
@@ -8,16 +8,22 @@ from http import HTTPStatus
 
 router = APIRouter()
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
-def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]):
-    token = credentials.credentials
-    
-    if not validate_jwt_token(token):
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            detail="invalid or expired token",
-        )
+def _validated_token(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)]):
+    if credentials is None or not validate_jwt_token(credentials.credentials):
+        raise HTTPException(status_code=401, detail='Sessão inválida ou expirada.', headers={'WWW-Authenticate': 'Bearer'})
+    return credentials.credentials
+
+
+def verify_token(
+    token: Annotated[str, Depends(_validated_token)],
+    db: Database = Depends(get_database),
+):
+    try:
+        UserRepository(db).get_user(get_user_id_from_token(token))
+    except UserNotFound:
+        raise HTTPException(status_code=401, detail='Sessão inválida ou expirada.', headers={'WWW-Authenticate': 'Bearer'}) from None
     return token
 
 
@@ -45,11 +51,11 @@ def auth_user(user_credentials: AuthUserRequest, db: Database = Depends(get_data
 
 
 @router.post('/auth/token')
-def auth_token(jwt_token: str) -> bool:
+def auth_token(jwt_token: Annotated[str, Body(embed=True)]) -> bool:
     valid_token = validate_jwt_token(jwt_token)
     return valid_token
 
 
 @router.get('/auth/request')
 def auth_request(token: Annotated[str, Depends(verify_token)]):
-    return {"message": "Access granted!", "token_used": token}
+    return {"message": "Access granted!"}

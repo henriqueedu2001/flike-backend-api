@@ -1,104 +1,67 @@
+from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from app.database.database_manager import *
-from app.database.repositories import *
-from app.schemas.digital_key_models import *
-from app.modules.utils.binary_handler import BinaryHandler
+from app.database.database_manager import Database, get_database
+from app.database.repositories import (
+    DigitalKeyRepository, DigitalKeyRequestRepository, DigitalLockRepository,
+    DigitalKeyNotFound, DigitalLockNotFound,
+)
+from app.schemas.digital_key_models import RequestDigitalKeyRequest, RequestDigitalKeyResponse, RequestStatus
 from app.modules.auth.jwt_token import get_user_id_from_token
 from app.api.routes.auth import verify_token
-from http import HTTPStatus
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_token)])
 
-def _serialize_digital_key(digital_key: dict) -> dict:
-    payload = digital_key['payload']
-    if isinstance(payload, memoryview):
-        payload = payload.tobytes()
-    digital_key['payload'] = BinaryHandler.get_hex_str_from_bytes(payload)
-    return digital_key
+
+def _serialize_digital_key(key: dict) -> dict:
+    return {**key, 'payload': bytes(key['payload']).hex()}
 
 
 @router.get('/digital_key/all')
-def get_all_digital_locks(db: Database = Depends(get_database)):
-    repo = DigitalKeyRepository(db)
-    digital_keys = repo.get_all_digital_keys()
-    return [_serialize_digital_key(digital_key) for digital_key in digital_keys]
+def get_all_digital_keys(token: Annotated[str, Depends(verify_token)], db: Database = Depends(get_database)):
+    return [_serialize_digital_key(key) for key in DigitalKeyRepository(db).get_digital_keys_by_user(get_user_id_from_token(token))]
 
 
 @router.get('/digital_key')
-def get_digital_key(
-    id: Optional[int] = None,
-    key_id: Optional[int] = None,
-    db: Database = Depends(get_database)
-):
+def get_digital_key(token: Annotated[str, Depends(verify_token)], id: Optional[int] = None,
+                    key_id: Optional[int] = None, db: Database = Depends(get_database)):
+    user_id = get_user_id_from_token(token)
     repo = DigitalKeyRepository(db)
-
+    if id is not None and key_id is not None:
+        raise HTTPException(400, 'Informe somente id ou key_id.')
     if key_id is not None:
         try:
-            digital_key = repo.get_digital_key(key_id)
-        except DigitalKeyNotFound as error:
-            raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-        return _serialize_digital_key(digital_key)
-
-    if id is not None:
-        digital_keys = repo.get_digital_keys_by_user(id)
-        return [_serialize_digital_key(digital_key) for digital_key in digital_keys]
-
-    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='either id or key_id must be provided')
-
-
-@router.post('/digital_key/new')
-def create_digital_lock(digital_key_data: CreateDigitalKeyRequest, db: Database = Depends(get_database)) -> CreateDigitalKeyResponse:
-    repo = DigitalKeyRepository(db)
-
-    try:
-        digital_key_id, created_at = repo.create_digital_key(
-            user_id=digital_key_data.user_id,
-            digital_lock_id=digital_key_data.digital_lock_id,
-            expiration=digital_key_data.expiration
-        )
-        return CreateDigitalKeyResponse(digital_key_id=digital_key_id, created_at=created_at)
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
+            key = repo.get_digital_key(key_id)
+            owner_id = DigitalLockRepository(db).get_institution_owner(key['digital_lock_id'])
+        except (DigitalKeyNotFound, DigitalLockNotFound) as error:
+            raise HTTPException(404, str(error)) from None
+        if key['user_id'] != user_id and owner_id != user_id:
+            raise HTTPException(403, 'Você não pode consultar esta chave digital.')
+        return _serialize_digital_key(key)
+    if id is not None and id != user_id:
+        raise HTTPException(403, 'Você só pode consultar sua própria lista de chaves.')
+    return [_serialize_digital_key(key) for key in repo.get_digital_keys_by_user(user_id)]
 
 
-@router.post('/digital_key/use')
-def use_digital_key(request_data: UseDigitalKeyRequest, db: Database = Depends(get_database)) -> UseDigitalKeyResponse:
-    repo = DigitalKeyRepository(db)
-    payload = BinaryHandler.encode_bytes_from_hex_str(request_data.payload, length=48)
-
-    try:
-        digital_key_id, used_at = repo.use_digital_key(payload)
-        return UseDigitalKeyResponse(digital_key_id=digital_key_id, used_at=used_at)
-    except (DigitalKeyNotFound, DigitalLockNotFound) as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(error))
-    except DigitalKeyAlreadyUsed as error:
-        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error))
-    except InvalidDigitalKeySignature as error:
-        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail=str(error))
+@router.post('/digital_key/new', deprecated=True)
+@router.post('/digital_key/use', deprecated=True)
+def retired_key_operation():
+    raise HTTPException(410, 'Chaves são emitidas pela aprovação de pedidos e permanecem reutilizáveis até expirar.')
 
 
 @router.get('/digital_key/requests')
-def get_my_digital_key_requests(
-    token: Annotated[str, Depends(verify_token)],
-    status: Optional[str] = None,
-    db: Database = Depends(get_database)
-):
-    repo = DigitalKeyRequestRepository(db)
-    user_id = get_user_id_from_token(token)
-    return repo.get_requests_by_user(user_id, status)
+def get_my_digital_key_requests(token: Annotated[str, Depends(verify_token)],
+                                status: Optional[RequestStatus] = None,
+                                db: Database = Depends(get_database)):
+    return DigitalKeyRequestRepository(db).get_requests_by_user(get_user_id_from_token(token), status)
 
 
 @router.post('/digital_key/request')
-def request_digital_key(
-    request_data: RequestDigitalKeyRequest,
-    token: Annotated[str, Depends(verify_token)],
-    db: Database = Depends(get_database)
-) -> RequestDigitalKeyResponse:
-    repo = DigitalKeyRequestRepository(db)
-    user_id = get_user_id_from_token(token)
-
+def request_digital_key(request_data: RequestDigitalKeyRequest,
+                        token: Annotated[str, Depends(verify_token)],
+                        db: Database = Depends(get_database)) -> RequestDigitalKeyResponse:
     try:
-        request_id, created_at = repo.create_request(user_id=user_id, digital_lock_id=request_data.lock_id)
-        return RequestDigitalKeyResponse(request_id=request_id, created_at=created_at)
-    except Exception as error:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(error))
+        request_id, created_at = DigitalKeyRequestRepository(db).create_request(
+            user_id=get_user_id_from_token(token), digital_lock_id=request_data.lock_id)
+    except DigitalLockNotFound as error:
+        raise HTTPException(404, str(error)) from None
+    return RequestDigitalKeyResponse(request_id=request_id, created_at=created_at)

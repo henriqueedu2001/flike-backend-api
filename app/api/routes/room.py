@@ -3,7 +3,9 @@ from app.database.database_manager import *
 from app.database.repositories import *
 from app.schemas.room_models import *
 
-router = APIRouter()
+from app.api.routes.auth import verify_token
+
+router = APIRouter(dependencies=[Depends(verify_token)])
 
 @router.get('/room/all')
 def get_all_institution(db: Database = Depends(get_database)):
